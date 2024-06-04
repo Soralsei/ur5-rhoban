@@ -1,0 +1,54 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
+{
+	"name": "UR5e Rhoban",
+	"build": {
+		// Sets the run context to one level up instead of the .devcontainer folder.
+		"context": "..",
+		// Path to Dockerfile
+		"dockerfile": "../Dockerfile",
+		// "target": "simulation" // simulation | real
+		"target": "builder" // simulation | real
+	},
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	// "features": {},
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Uncomment the next line to run commands after the container is created.
+	// "postCreateCommand": "cat /etc/os-release",
+	// Configure tool-specific properties.
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-iot.vscode-ros",
+				"ms-vscode.cpptools",
+				"ms-vscode.cmake-tools",
+				"redhat.vscode-xml",
+				"redhat.vscode-yaml"
+			]
+		}
+	},
+	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "devcontainer"
+	"workspaceMount": "source=${localWorkspaceFolder},target=/opt/ros/ur_ws,type=bind,consistency=cached",
+	"workspaceFolder": "/opt/ros/ur_ws",
+	"privileged": true,
+	"runArgs": [
+		"--net=host",
+		"--gpus=all",
+		// "--name=ros-sim"
+		"--name=ur5-ros"
+	],
+	"containerEnv": {
+		"DISPLAY": "${localEnv:DISPLAY}",
+		"QT_X11_NO_MITSHM": "1"
+	},
+	"mounts": [
+		{
+			"source": "${localEnv:HOME}/.gazebo",
+			"target": "/root/.gazebo/",
+			"type": "bind"
+		}
+	]
+}

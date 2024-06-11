@@ -7,8 +7,10 @@
 		"context": "..",
 		// Path to Dockerfile
 		"dockerfile": "../Dockerfile",
-		// "target": "simulation" // simulation | real
-		"target": "builder" // simulation | real
+		"target": "placo-builder",
+		"options": [
+			"--progress=plain"
+		]
 	},
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
@@ -37,7 +39,6 @@
 	"runArgs": [
 		"--net=host",
 		"--gpus=all",
-		// "--name=ros-sim"
 		"--name=ur5-ros"
 	],
 	"containerEnv": {

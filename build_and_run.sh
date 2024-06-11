@@ -212,6 +212,7 @@ docker run --rm -ti \
     --volume /tmp/.X11-unix/:/tmp/.X11-unix/ \
     --volume $HOME/.gazebo:/root/.gazebo/ \
     --name $container \
+    --port 7080:7070
     $tag
 
 ## docker run options explanation : 

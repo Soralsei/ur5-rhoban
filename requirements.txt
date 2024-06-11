@@ -1,3 +1,4 @@
-placo
 numpy
 matplotlib
+scipy
+placo

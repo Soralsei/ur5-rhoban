@@ -40,7 +40,8 @@
 
 
   <!-- Definition of the main macro -->
-  <xacro:macro name="ur_robot_gazebo" params="
+  <xacro:macro name="ur_robot_gazebo"
+    params="
    prefix
    joint_limits_parameters_file
    kinematics_parameters_file
@@ -56,7 +57,7 @@
       NOTE: this imports the '_macro.xacro' from ur_description, as that contains
       the definitions for the real robot.
     -->
-  <xacro:include filename="$(find ur_description)/urdf/inc/ur_macro.xacro"/>
+    <xacro:include filename="$(find ur_description)/urdf/inc/ur_macro.xacro" />
 
 
     <!-- Instantiate model for the REAL robot. -->

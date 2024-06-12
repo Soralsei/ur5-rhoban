@@ -7,7 +7,7 @@
 		"context": "..",
 		// Path to Dockerfile
 		"dockerfile": "../Dockerfile",
-		"target": "placo-builder",
+		"target": "dev",
 		"options": [
 			"--progress=plain"
 		]

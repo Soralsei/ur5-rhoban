@@ -16,23 +16,7 @@ ros-${ROS_DISTRO}-tf2-tools \
 ros-${ROS_DISTRO}-rqt \
 ros-${ROS_DISTRO}-rqt-common-plugins \
 ros-${ROS_DISTRO}-rqt-robot-plugins \
-ros-${ROS_DISTRO}-image-transport-plugins \
-&& apt install -qqy lsb-release curl \
-&& sudo mkdir -p /etc/apt/keyrings \
-&& curl http://robotpkg.openrobots.org/packages/debian/robotpkg.asc \
-    | tee /etc/apt/keyrings/robotpkg.asc \
-&&  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/robotpkg.asc] http://robotpkg.openrobots.org/packages/debian/pub $(lsb_release -cs) robotpkg" \
-    | tee /etc/apt/sources.list.d/robotpkg.list \
-&& apt update \
-&& apt install -qqy robotpkg-py38-pinocchio \
-&& echo "export PATH=/opt/openrobots/bin:$PATH \n\
-export PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH \n\
-export LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH \n\
-export PYTHONPATH=/opt/openrobots/lib/python3.10/site-packages:$PYTHONPATH # Adapt your desired python version here \n\
-export CMAKE_PREFIX_PATH=/opt/openrobots:$CMAKE_PREFIX_PATH" >> ~/.bashrc \
-&& sudo apt-get install -y robotpkg-hpp-fcl robotpkg-eiquadprog \
-    robotpkg-pinocchio 
-    #robotpkg-py3-pinocchio 
+ros-${ROS_DISTRO}-image-transport-plugins
 
 # Caching stage
 FROM $FROM_IMAGE AS cacher
@@ -54,10 +38,22 @@ FROM apt-depends as placo-builder
 
 WORKDIR /root/
 RUN <<-EOF
-export PATH=/opt/openrobots/bin:$PATH \
-export PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH \
-export LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH \
-export PYTHONPATH=/opt/openrobots/lib/python3.10/site-packages:$PYTHONPATH # Adapt your desired python version here \
+apt install -qqy lsb-release curl
+mkdir -p /etc/apt/keyrings
+curl http://robotpkg.openrobots.org/packages/debian/robotpkg.asc \
+    | tee /etc/apt/keyrings/robotpkg.asc
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/robotpkg.asc] http://robotpkg.openrobots.org/packages/debian/pub $(lsb_release -cs) robotpkg" \
+    | tee /etc/apt/sources.list.d/robotpkg.list
+
+apt update
+apt install -qqy robotpkg-py38-pinocchio
+sudo apt-get install -y robotpkg-hpp-fcl robotpkg-eiquadprog \
+    robotpkg-pinocchio
+
+export PATH=/opt/openrobots/bin:$PATH 
+export PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH
+export LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH
+export PYTHONPATH=/opt/openrobots/lib/python3.8/site-packages:$PYTHONPATH
 export CMAKE_PREFIX_PATH=/opt/openrobots:$CMAKE_PREFIX_PATH
 
 git clone https://gitlab.com/libeigen/eigen.git
@@ -74,7 +70,17 @@ cd placo
 mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-# make -j 16
+make -j 24 install
+
+export PYTHONPATH=/opt/openrobots/lib/python3.8/site-packages:$PYTHONPATH
+
+echo "export PATH=/opt/openrobots/bin:$PATH\n \
+export PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH\n \
+export LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH\n \
+export PYTHONPATH=/opt/openrobots/lib/python3.8/site-packages:$PYTHONPATH\n \
+export CMAKE_PREFIX_PATH=/opt/openrobots:$CMAKE_PREFIX_PATH\n \
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages:$PYTHONPATH" >> ~/.bashrc
+
 EOF
 
 #Building stage
@@ -102,10 +108,7 @@ COPY . .
 RUN <<-EOF
     . /opt/ros/${ROS_DISTRO}/setup.sh && catkin_make
     echo "source $WORKSPACE/devel/setup.bash" >> ~/.bashrc
-    echo "source $WORKSPACE/ve_ur5_rhoban/bin/activate" >> ~/.bashrc
-    cat ~/.bashrc
-    . ./ve_ur5_rhoban/bin/activate && python3 -m pip install --upgrade pip \
-    && pip install -r requirements.txt --ignore-installed
+    python3 -m pip install --upgrade pip && pip install --ignore-installed -r requirements.txt
 EOF
 
 EXPOSE 7070
@@ -126,5 +129,5 @@ RUN sed --in-place --expression \
     /ros_entrypoint.sh \
     && echo "source $WORKSPACE/devel/setup.bash" >> ~/.bashrc
 
-RUN . ./ve_ur5_rhoban/bin/activate && python3 -m pip install --upgrade pip \
-&& pip install -r requirements.txt
+RUN python3 -m pip install --upgrade pip \
+&& pip install --ignore-installed -r requirements.txt

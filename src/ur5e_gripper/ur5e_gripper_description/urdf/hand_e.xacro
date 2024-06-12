@@ -5,6 +5,6 @@
     <xacro:robotiq_hande_gripper 
         prefix=""
         parent="tool0">
-        <origin xyz="0 0 0" rpy="0 0 0" />
+        <origin xyz="0 0 0" rpy="0 0 1.57" />
     </xacro:robotiq_hande_gripper>
 </robot>

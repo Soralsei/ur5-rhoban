@@ -1,0 +1,6 @@
+geometry_msgs/PoseStamped target_pose
+float64 timeout # In seconds
+---
+bool success
+---
+geometry_msgs/PoseStamped current_pose

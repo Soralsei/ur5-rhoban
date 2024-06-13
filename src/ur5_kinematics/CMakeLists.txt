@@ -8,9 +8,15 @@ project(ur5_kinematics)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-    sensor_msgs
-    std_msgs
+  geometry_msgs
+  sensor_msgs
+  std_msgs
+  genmsg
+  actionlib_msgs
 )
+
+add_action_files(DIRECTORY action FILES URGoTo.action)
+generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -160,7 +166,6 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  src/util.py
   src/kinematics.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

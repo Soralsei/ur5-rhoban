@@ -95,8 +95,8 @@ class PlacoUR5Ros():
         self.kinematics_server.start()
     
     def execute_goal(self, goal: URGoToGoal):
-        freq = rospy.Rate(500)
-        dt = 1. / 500.
+        freq = rospy.Rate(1000)
+        dt = 1. / 1000.
         success = False
         self.solver.dt = dt
         
@@ -109,27 +109,27 @@ class PlacoUR5Ros():
             start = rospy.Time.now()
             while (rospy.Time.now()- start).to_sec() < goal.timeout:
                 
-                if self._as.is_preempt_requested():
+                if self.kinematics_server.is_preempt_requested():
                     rospy.loginfo('%s: Preempted' % self._action_name)
-                    self._as.set_preempted()
+                    self.kinematics_server.set_preempted()
                     success = False
                     return
+                t1 = time.time()
                 self.robot.update_kinematics()
                 try:
                     self.solver.solve(True)
                 except RuntimeError as e:
                     print(f'IK solve failed : {e.with_traceback(None)}')
+                t2 = time.time()
+                rospy.logdebug_once(f'Placo solve time : {t2 - t1}')
                 
                 robot_q = []
                 for name in self.robot.joint_names():
                     robot_q.append(self.robot.get_joint(name))
                 print(robot_q[-2:])
                 q = Float64MultiArray(data=robot_q[:-2])
-                # q = Float64MultiArray(data=[0, -1.57, 1.57, -1.57, -1.57, -1.57])
                 self.controller_pub.publish(q)
                 
-                print(f'Position error {self.effector_task.position().error_norm()}')
-                print(f'Orientation error {self.effector_task.orientation().error_norm()}')
                 if self.effector_task.orientation().error_norm() <= 1e-2 and self.effector_task.position().error_norm() <= 1e-3:
                     success = True
                     break

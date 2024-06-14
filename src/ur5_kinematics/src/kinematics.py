@@ -110,23 +110,21 @@ class PlacoUR5Ros():
             while (rospy.Time.now()- start).to_sec() < goal.timeout:
                 
                 if self.kinematics_server.is_preempt_requested():
-                    rospy.loginfo('%s: Preempted' % self._action_name)
+                    rospy.loginfo('URGoToGoalAction : Preempted')
                     self.kinematics_server.set_preempted()
                     success = False
                     return
-                t1 = time.time()
+                
                 self.robot.update_kinematics()
                 try:
                     self.solver.solve(True)
                 except RuntimeError as e:
                     print(f'IK solve failed : {e.with_traceback(None)}')
-                t2 = time.time()
-                rospy.logdebug_once(f'Placo solve time : {t2 - t1}')
                 
                 robot_q = []
                 for name in self.robot.joint_names():
                     robot_q.append(self.robot.get_joint(name))
-                print(robot_q[-2:])
+                
                 q = Float64MultiArray(data=robot_q[:-2])
                 self.controller_pub.publish(q)
                 
@@ -153,7 +151,7 @@ class PlacoUR5Ros():
             self.joint_state = joint_state
             self.state_received_cond.notify()
     
-    def visualization_callback(self, event: rospy.timer.TimerEvent) -> None:
+    def visualization_callback(self, _: rospy.timer.TimerEvent) -> None:
         with self.robot_lock:
             self.viz.display(self.robot.state.q)
             robot_frame_viz(self.robot, "hande_right_finger")

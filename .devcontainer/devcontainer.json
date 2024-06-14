@@ -51,5 +51,6 @@
 			"target": "/root/.gazebo/",
 			"type": "bind"
 		}
-	]
+	],
+	"otherPortsAttributes": { "onAutoForward" : "ignore" }
 }

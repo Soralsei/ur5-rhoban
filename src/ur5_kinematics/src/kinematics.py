@@ -1,7 +1,7 @@
-import placo
 import rospy
+
 import numpy as np
-import time
+import placo
 from placo_utils.visualization import robot_viz, frame_viz, robot_frame_viz
 from placo_utils.tf import tf as ptf
 
@@ -15,7 +15,7 @@ import tf2_ros as tf2
 import tf2_geometry_msgs
 import rospkg
 
-import re
+import re, sys, time
 from threading import Lock, Condition
 
 JOINT_NAMES=[
@@ -90,7 +90,7 @@ class PlacoUR5Ros():
         self.effector_task = self.solver.add_frame_task("hande_right_finger", self.T_world_target)
         self.effector_task.configure("effector", "soft", 1., 1.)
         
-        self.visualization_timer = rospy.Timer(rospy.Duration(1/30), self.visualization_callback)
+        self.visualization_timer = rospy.Timer(rospy.Duration(1/60), self.visualization_callback)
         
         self.kinematics_server.start()
     
@@ -183,7 +183,7 @@ class PlacoUR5Ros():
     
 
 if __name__=="__main__":
-    import signal
+    # import signal
     
     running = True
 
@@ -194,8 +194,9 @@ if __name__=="__main__":
     
     # signal.signal(signal.SIGINT, sig_handler)
     
-    rospy.init_node("ur5e_kinematics")
+    rospy.init_node("ur5e_kinematics", sys.argv)
     test = PlacoUR5Ros()
+    rospy.spin()
     # urdf = rospy.get_param('/robot_description')
     # if not urdf:
     #     rospy.signal_shutdown()

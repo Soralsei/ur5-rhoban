@@ -1,6 +1,7 @@
 [submodule "src/universal_robot"]
 	path = src/universal_robot
-	url = https://github.com/ros-industrial/universal_robot.git
+	url = https://github.com/Soralsei/universal_robot.git
+	branch = ur5e
 [submodule "src/robotiq"]
 	path = src/robotiq
 	url = https://github.com/cambel/robotiq.git

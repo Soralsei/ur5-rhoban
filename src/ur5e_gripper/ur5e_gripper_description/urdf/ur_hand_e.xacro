@@ -25,7 +25,7 @@
         <xacro:robotiq_hande_gripper
             prefix="${prefix}"
             parent="${prefix}tool0">
-            <origin xyz="0 0 0" rpy="0 0 1.57" />
+            <origin xyz="0 0 0" rpy="0 0 0" />
         </xacro:robotiq_hande_gripper>
     </xacro:macro>
 </robot>

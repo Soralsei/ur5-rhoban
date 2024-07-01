@@ -111,8 +111,6 @@ RUN <<-EOF
     python3 -m pip install --upgrade pip && pip install --ignore-installed -r requirements.txt
 EOF
 
-EXPOSE 7070
-
 
 FROM rosdep-install as release
 ARG WORKSPACE
@@ -129,5 +127,6 @@ RUN sed --in-place --expression \
     /ros_entrypoint.sh \
     && echo "source $WORKSPACE/devel/setup.bash" >> ~/.bashrc
 
+COPY requirements.txt .
 RUN python3 -m pip install --upgrade pip \
 && pip install --ignore-installed -r requirements.txt

@@ -14,8 +14,6 @@ import sys
 
 def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
     #Transform point into arm base frame
-    
-
     pos = ptf.translation_from_matrix(matrix)
     rot = ptf.quaternion_from_matrix(matrix)
     
@@ -37,21 +35,20 @@ def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
 if __name__ == '__main__':
     
     def timer_cb(event: rospy.timer.TimerEvent):
-        global t
-        T_world_target = ptf.translation_matrix([0.5, 0.5 * np.sin(t), 0.5]) @ ptf.euler_matrix(np.pi, 0, 0)
+        global t, seq
+        # t1 = rospy.Time.now()
+        T_world_target = ptf.translation_matrix([0.5, 0.3 * np.sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
             
         goal = URGoToGoal()
         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')
-        goal.timeout = 2.0
+        goal.timeout = 1/100.
+        goal.target_pose.header.seq = seq
+        # timeout = rospy.Time.now() - t1
         
-        t1 = rospy.Time.now()
-        client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(secs=1.0))
-        success = client.get_result()
+        client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(1/100.))
         
-        if not success:
-            rospy.signal_shutdown("Failed to reach goal")
-        
-        t += (rospy.Time.now() - t1).to_sec()
+        t += 1 / 100.
+        seq += 1
     
     rospy.init_node("kinematics_test", sys.argv)
     
@@ -64,23 +61,6 @@ if __name__ == '__main__':
     timer = rospy.Timer(rospy.Duration(1 / 100.), timer_cb)
     
     t = 0
+    seq = 0
+    
     rospy.spin()
-    # running = True
-    # while running:
-    #     try:
-    #         T_world_target = ptf.translation_matrix([0.5, 0.5 * np.sin(t), 0.5]) @ ptf.euler_matrix(np.pi, 0, 0)
-            
-    #         goal = URGoToGoal()
-    #         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')
-    #         goal.timeout = 2.0
-    #         t1 = rospy.Time.now()
-    #         client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(secs=1.0))
-    #         success = client.get_result()
-            
-    #         if success:
-    #             rospy.loginfo(f'Goal reached')
-            
-    #         t += (rospy.Time.now() - t1).to_sec()
-            
-    #     except rospy.ROSInterruptException:
-    #         rospy.signal_shutdown("SIGINT")

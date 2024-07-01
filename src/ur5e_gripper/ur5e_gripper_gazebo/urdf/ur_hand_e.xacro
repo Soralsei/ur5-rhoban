@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<robot name="ur5e_gripper" xmlns:xacro="http://wiki.ros.org/xacro">
+    <xacro:include filename="$(find ur_description)/urdf/inc/ur_macro.xacro" />
+    <xacro:include filename="$(find robotiq_description)/urdf/robotiq_hande_gripper.urdf.xacro" />
+
+    <!-- arm -->
+    <xacro:macro
+        name="ur5_hand_e"
+        params="
+        prefix
+        joint_limits_parameters_file
+        kinematics_parameters_file
+        physical_parameters_file
+        visual_parameters_file
+        transmission_hw_interface:=hardware_interface/EffortJointInterface
+        safety_limits:=false safety_pos_margin:=0.15 safety_k_position:=20"
+    >
+        <xacro:ur_robot
+            prefix="${prefix}"
+            joint_limits_parameters_file="${joint_limit_params}"
+            kinematics_parameters_file="${kinematics_params}"
+            physical_parameters_file="${physical_params}"
+            visual_parameters_file="${visual_params}"
+            transmission_hw_interface="${transmission_hw_interface}"
+            safety_limits="${safety_limits}"
+            safety_pos_margin="${safety_pos_margin}"
+            safety_k_position="${safety_k_position}" />
+
+        <!-- Configure self collision properties per link -->
+        <gazebo reference="${prefix}shoulder_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}upper_arm_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}forearm_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}wrist_1_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}wrist_3_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}wrist_2_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+        <gazebo reference="${prefix}ee_link">
+            <selfCollide>true</selfCollide>
+        </gazebo>
+
+        <!-- Inject Gazebo ROS Control plugin, which allows us to use ros_control
+        controllers to control the virtual robot hw. -->
+        <gazebo>
+            <plugin name="ros_control" filename="libgazebo_ros_control.so">
+                <!--robotNamespace>/</robotNamespace-->
+                <!--robotSimType>gazebo_ros_control/DefaultRobotHWSim</robotSimType-->
+            </plugin>
+        </gazebo>
+
+        <xacro:hande_gripper
+            prefix="${prefix}"
+            parent="${prefix}tool0" />
+    </xacro:macro>
+</robot>

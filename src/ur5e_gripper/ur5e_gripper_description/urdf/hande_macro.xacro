@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot name="robotiq_hande_gripper" xmlns:xacro="http://wiki.ros.org/xacro">
+    <xacro:include filename="$(find robotiq_description)/urdf/robotiq_hande_gripper.urdf.xacro" />
+
+    <xacro:macro name="hande_gripper" params="prefix parent">
+        <xacro:property name="z_offset" value="0.1365" />
+
+        <xacro:robotiq_hande_gripper
+            prefix="${prefix}"
+            parent="${prefix}${parent}">
+            <origin xyz="0 0 0" rpy="0 0 0" />
+        </xacro:robotiq_hande_gripper>
+
+        <link name="ee_link" />
+        <joint name="ee_link_joint" type="fixed">
+            <origin
+                xyz="0 0 ${z_offset}"
+                rpy="0 0 0" />
+            <parent link="${prefix}hand_e_link" />
+            <child link="${prefix}ee_link" />
+        </joint>
+    </xacro:macro>
+</robot>

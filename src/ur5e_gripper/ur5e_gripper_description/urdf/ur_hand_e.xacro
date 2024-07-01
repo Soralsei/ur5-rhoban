@@ -22,10 +22,8 @@
             safety_pos_margin="${safety_pos_margin}"
             safety_k_position="${safety_k_position}" />
 
-        <xacro:robotiq_hande_gripper
-            prefix="${prefix}"
-            parent="${prefix}tool0">
-            <origin xyz="0 0 0" rpy="0 0 0" />
-        </xacro:robotiq_hande_gripper>
+        <xacro:hande_gripper 
+            prefix=""
+            parent="tool0"/>
     </xacro:macro>
 </robot>

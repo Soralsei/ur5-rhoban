@@ -75,7 +75,7 @@ class PlacoUR5Ros():
         self.base_frame = prefix + rospy.get_param('base_frame', 'base_link')
         controller_topic = rospy.get_param('controller_topic', 'joint_group_eff_pos_controller/command')
         self.effector_frame = prefix + rospy.get_param('effector_frame', 'ee_link')
-        self.frequency = rospy.get_param('frequency', 1000.)
+        self.frequency = rospy.get_param('frequency', 500.)
         
         self.robot = placo.RobotWrapper('', 0, urdf)
         self.n_joints = len(self.robot.joint_names())

@@ -44,7 +44,10 @@
     default="$(find ur5e_gripper_gazebo)/config/ur5e_pos_controllers.yaml"
     doc="Config file used for defining the ROS-Control controllers." />
   <!-- <arg name="controllers"
-    default="joint_state_controller shoulder_pan_joint_position_controller shoulder_lift_joint_position_controller elbow_joint_position_controller wrist_1_joint_position_controller wrist_2_joint_position_controller wrist_3_joint_position_controller gripper_controller"
+    default="joint_state_controller shoulder_pan_joint_position_controller
+  shoulder_lift_joint_position_controller elbow_joint_position_controller
+  wrist_1_joint_position_controller wrist_2_joint_position_controller
+  wrist_3_joint_position_controller gripper_controller"
     doc="Controllers that are activated by default." /> -->
   <arg name="controllers"
     default="joint_state_controller joint_group_eff_pos_controller gripper_controller"
@@ -61,11 +64,13 @@
   are initally loaded, but not started."/> -->
 
   <!-- robot_state_publisher configuration -->
+  <arg name="publish_state" default="true" doc="Runs the robot_state_publisher node" />
   <arg name="tf_prefix" default="" doc="tf_prefix used for the robot." />
   <arg name="tf_pub_rate" default="500"
     doc="Rate at which robot_state_publisher should publish transforms." />
 
   <!-- Gazebo parameters -->
+  <arg name="start_gazebo" default="true" />
   <arg name="paused" default="false" doc="Starts Gazebo in paused mode" />
   <arg name="gui" default="true" doc="Starts Gazebo gui" />
 
@@ -78,7 +83,7 @@
   </include>
 
   <!-- Robot state publisher -->
-  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" if="$(arg publish_state)">
     <param name="publish_frequency" type="double" value="$(arg tf_pub_rate)" />
     <param name="tf_prefix" value="$(arg tf_prefix)" />
   </node>
@@ -90,5 +95,6 @@
     <arg name="gui" value="$(arg gui)" />
     <arg name="paused" value="$(arg paused)" />
     <arg name="stopped_controllers" value="$(arg stopped_controllers)" />
+    <arg name="start_gazebo" value="$(arg start_gazebo)" />
   </include>
 </launch>

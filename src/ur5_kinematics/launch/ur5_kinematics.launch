@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="visualize" default="false" doc="Run PlaCo's visualizer" />
+    <arg name="link_prefix" default="" doc="Link prefix for the UR (in case the arm is connected to something else)" />
+    <arg name="base_frame" default="base_link" doc="Run PlaCo's visualizer" />
+    <arg name="controller_topic" default="joint_group_eff_pos_controller/command" doc="ROS controller topic to send commands to" />
+    <arg name="effector_frame" default="ee_link" doc="ROS controller topic to send commands to" />
+    <arg name="frequency" default="500" doc="ROS controller topic to send commands to" />
+
+    <node name="kinematics_server" pkg="ur5_kinematics" type="kinematics.py">
+        <param name="visualize" value="$(arg visualize)" />
+        <param name="link_prefix" value="$(arg link_prefix)" />
+        <param name="base_frame" value="$(arg base_frame)" />
+        <param name="controller_topic" value="$(arg controller_topic)" />
+        <param name="effector_frame" value="$(arg effector_frame)" />
+        <param name="frequency" value="$(arg frequency)" />
+    </node>
+</launch>

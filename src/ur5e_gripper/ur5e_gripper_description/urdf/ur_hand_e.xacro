@@ -24,6 +24,6 @@
 
         <xacro:hande_gripper 
             prefix="${prefix}"
-            parent="${prefix}tool0"/>
+            parent="tool0"/>
     </xacro:macro>
 </robot>

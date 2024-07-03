@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot name="ur5e_gripper" xmlns:xacro="http://wiki.ros.org/xacro">
-    <xacro:include filename="$(find ur_description)/urdf/inc/ur_macro.xacro" />
+    <xacro:include filename="$(find ur5e_gripper_description)/urdf/ur_hand_e.xacro" />
     <xacro:include filename="$(find ur5e_gripper_description)/urdf/hande_macro.xacro" />
 
     <!-- parameters -->

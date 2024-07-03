@@ -23,7 +23,7 @@
             safety_k_position="${safety_k_position}" />
 
         <xacro:hande_gripper 
-            prefix=""
-            parent="tool0"/>
+            prefix="${prefix}"
+            parent="${prefix}tool0"/>
     </xacro:macro>
 </robot>

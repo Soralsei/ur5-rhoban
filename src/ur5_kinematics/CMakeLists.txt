@@ -168,6 +168,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   src/kinematics.py
   test/sine_test.py
+  script/auto_sample_collisions.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

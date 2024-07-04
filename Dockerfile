@@ -46,9 +46,9 @@ echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/robotpkg.asc] http://robotpkg.
     | tee /etc/apt/sources.list.d/robotpkg.list
 
 apt update
-apt install -qqy robotpkg-py38-pinocchio
+apt install -qqy robotpkg-py38-pinocchio=2.7.0
 sudo apt-get install -y robotpkg-hpp-fcl robotpkg-eiquadprog \
-    robotpkg-pinocchio
+    robotpkg-pinocchio=2.7.0
 
 export PATH=/opt/openrobots/bin:$PATH 
 export PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH

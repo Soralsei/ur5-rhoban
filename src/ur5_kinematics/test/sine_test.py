@@ -41,11 +41,10 @@ if __name__ == '__main__':
             
         goal = URGoToGoal()
         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')
-        goal.timeout = 1/100.
+        goal.timeout = 2.0
         goal.target_pose.header.seq = seq
-        # timeout = rospy.Time.now() - t1
         
-        client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(1/100.))
+        client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(2.0))
         
         t += 1 / 100.
         seq += 1

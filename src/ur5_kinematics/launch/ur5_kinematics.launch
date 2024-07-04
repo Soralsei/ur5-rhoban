@@ -3,16 +3,33 @@
     <arg name="visualize" default="false" doc="Run PlaCo's visualizer" />
     <arg name="link_prefix" default="" doc="Link prefix for the UR (in case the arm is connected to something else)" />
     <arg name="base_frame" default="base_link" doc="Run PlaCo's visualizer" />
-    <arg name="controller_topic" default="joint_group_eff_pos_controller/command" doc="ROS controller topic to send commands to" />
     <arg name="effector_frame" default="ee_link" doc="ROS controller topic to send commands to" />
+    
+    <arg name="controller_topic" default="joint_group_eff_pos_controller/command" doc="ROS controller topic to send commands to" />
+    <arg name="joint_state_topic" default="/joint_states" doc="Joint states topic" />
+    
     <arg name="frequency" default="500" doc="ROS controller topic to send commands to" />
+    
+    <arg name="publish_raw_state" default="false" doc="Publish raw joint states instead of commands" />
+    <arg name="publish_intermediate" default="false" doc="Publish intermediate inverse kinematics positions" />
 
-    <node name="kinematics_server" pkg="ur5_kinematics" type="kinematics.py">
+    <arg name="self_collide" default="False" doc="Whether to handle self_collisions or not" />
+    <arg name="collision_pairs" default="" doc="PlaCo collision pairs configuration file" />
+
+    <node name="kinematics_server" pkg="ur5_kinematics" type="kinematics.py" output="screen">
         <param name="visualize" value="$(arg visualize)" />
         <param name="link_prefix" value="$(arg link_prefix)" />
         <param name="base_frame" value="$(arg base_frame)" />
-        <param name="controller_topic" value="$(arg controller_topic)" />
         <param name="effector_frame" value="$(arg effector_frame)" />
+
+        <param name="controller_topic" value="$(arg controller_topic)" />
+        <param name="joint_state_topic" value="$(arg joint_state_topic)" />
         <param name="frequency" value="$(arg frequency)" />
+
+        <param name="publish_raw_state" value="$(arg publish_raw_state)" />
+        <param name="publish_intermediate" value="$(arg publish_intermediate)" />
+
+        <param name="self_collide" value="$(arg self_collide)" />
+        <param name="collision_pairs" value="$(arg collision_pairs)" />
     </node>
 </launch>

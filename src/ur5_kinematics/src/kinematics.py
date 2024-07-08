@@ -2,6 +2,7 @@ import rospy
 
 import numpy as np
 from collections.abc import Iterable
+from collections import deque
 import placo
 from placo_utils.visualization import robot_viz, frame_viz, robot_frame_viz
 from placo_utils.tf import tf as ptf
@@ -38,6 +39,8 @@ UNMASKED_JOINT_NAMES=[
     'wrist_2_joint',
     'wrist_3_joint'
 ]
+
+solve_times: deque = deque([], maxlen=1000)
 
 def parse_ros_packages(urdf: str):
     if not urdf:
@@ -99,7 +102,7 @@ class PlacoUR5Ros():
         
         self.solver = placo.KinematicsSolver(self.robot)
         # Mask non moving joints (like gripper fingers for example)
-        # unmasked = [prefix + name for name in UNMASKED_JOINT_NAMES]
+        # unmasked = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
         
         # for name in self.robot.joint_names():
         #     if name not in unmasked:
@@ -152,6 +155,7 @@ class PlacoUR5Ros():
 
 
     def execute_goal(self, goal: URGoToGoal):
+        global solve_times
         # freq = rospy.Rate(self.frequency)
         success = False
         
@@ -164,30 +168,27 @@ class PlacoUR5Ros():
         start = rospy.Time.now()
         rospy.logdebug("Starting goal")
         while (rospy.Time.now()- start).to_sec() < goal.timeout:
-            loop_start = rospy.Time.now()
+            # loop_start = rospy.Time.now()
             if self.kinematics_server.is_preempt_requested():
                 # rospy.logdebug('URGoToGoalAction : Preempted')
                 self.result.success = False
                 self.kinematics_server.set_preempted(self.result)
                 return
-            with self.robot_lock():
+            with self.robot_lock:
                 self.robot.update_kinematics()
                 try:
                     t1 = rospy.Time.now()
                     self.solver.solve(True)
-                    rospy.logdebug_throttle(0.2, f'IK solve time : {(rospy.Time.now() - t1).to_sec()}')
+                    # rospy.loginfo(f'IK solve time : {(rospy.Time.now() - t1).to_sec()}')
+                    solve_times.append((rospy.Time.now() - t1).to_sec())
                 except RuntimeError as e:
-                    rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
+                    rospy.logerror(f'IK solve failed : {e.with_traceback(None)}')
                     self.result.success = False
                     self.kinematics_server.set_aborted(result=self.result)
                     return
             
-            t1 = rospy.Time.now()
-            reached = self.target_reached()
-            rospy.logdebug_throttle(0.2, f'Reached time: {(rospy.Time.now() - t1).to_sec()}')
-            
-            if reached:
-                rospy.logdebug_throttle(0.2, f'Total solve time : {(rospy.Time.now() - start).to_sec()}')
+            if self.target_reached():
+                # rospy.loginfo(f'Total solve time : {(rospy.Time.now() - start).to_sec()}')
                 success = True
                 self.publish_callback()
                 break
@@ -195,11 +196,11 @@ class PlacoUR5Ros():
             if self.publish_intermediate:
                 self.publish_callback()
 
-            rospy.logdebug_throttle(0.2, f'Total loop time : {(rospy.Time.now() - loop_start).to_sec()}')
+            # rospy.loginfo(f'Total loop time : {(rospy.Time.now() - loop_start).to_sec()}')
                 
         self.result.success = success
         self.kinematics_server.set_succeeded(self.result)
-        rospy.logdebug(f'Goal success : {success}')
+        # rospy.logdebug(f'Goal success : {success}')
 
 
     def joint_state_callback(self, state: JointState) -> None:
@@ -282,7 +283,24 @@ class PlacoUR5Ros():
 
  
 
-if __name__=="__main__":    
+if __name__=="__main__":
+    import signal
     rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.INFO)
     kinematics_server = PlacoUR5Ros()
-    rospy.spin()
+    running = True
+    
+    def signal_handler(_, _2):
+        global running
+        running = False
+        
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    while running:
+        pass
+    
+    with open('log/solve_times.txt', 'a') as f:
+        for time in solve_times:
+            f.write(f'{time}\n')
+        print(f'Average solve time : {np.average(solve_times)}s', file=sys.stderr)
+    
+    rospy.signal_shutdown('SIGINT')

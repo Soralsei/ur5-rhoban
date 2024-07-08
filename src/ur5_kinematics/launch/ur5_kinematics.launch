@@ -16,7 +16,7 @@
     <arg name="self_collide" default="False" doc="Whether to handle self_collisions or not" />
     <arg name="collision_pairs" default="" doc="PlaCo collision pairs configuration file" />
 
-    <node name="kinematics_server" pkg="ur5_kinematics" type="kinematics.py" output="screen">
+    <node name="kinematics_server" pkg="ur5_kinematics" type="kinematics.py" >
         <param name="visualize" value="$(arg visualize)" />
         <param name="link_prefix" value="$(arg link_prefix)" />
         <param name="base_frame" value="$(arg base_frame)" />

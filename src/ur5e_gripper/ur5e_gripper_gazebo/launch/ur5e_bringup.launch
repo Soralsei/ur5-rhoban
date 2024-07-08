@@ -51,9 +51,9 @@
   wrist_3_joint_position_controller gripper_controller"
     doc="Controllers that are activated by default." /> -->
   <arg name="controllers"
-    default="joint_state_controller joint_group_eff_pos_controller gripper_controller"
+    default="joint_state_controller eff_joint_traj_controller"
     doc="Controllers that are activated by default." />
-  <arg name="stopped_controllers" default=""
+  <arg name="stopped_controllers" default="joint_group_eff_controller"
     doc="Controllers that are initally loaded, but not started." />
 
   <!-- <arg name="controller_config_file" default="$(find

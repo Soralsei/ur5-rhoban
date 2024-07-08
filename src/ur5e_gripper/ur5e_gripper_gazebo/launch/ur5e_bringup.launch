@@ -34,6 +34,7 @@
   description and related parameter files -->
   <arg name="robot_description_file" default="$(dirname)/inc/load_ur5e.launch.xml"
     doc="Launch file which populates the 'robot_description' parameter." />
+  <arg name="load_robot" default="true" />
   <arg name="joint_limit_params" default="$(find ur_description)/config/ur5e/joint_limits.yaml" />
   <arg name="kinematics_params" default="$(find ur_description)/config/ur5e/default_kinematics.yaml" />
   <arg name="physical_params" default="$(find ur_description)/config/ur5e/physical_parameters.yaml" />
@@ -75,7 +76,7 @@
   <arg name="gui" default="true" doc="Starts Gazebo gui" />
 
   <!-- Load urdf on the parameter server -->
-  <include file="$(arg robot_description_file)">
+  <include file="$(arg robot_description_file)" if="$(arg load_robot)">
     <arg name="joint_limit_params" value="$(arg joint_limit_params)" />
     <arg name="kinematics_params" value="$(arg kinematics_params)" />
     <arg name="physical_params" value="$(arg physical_params)" />
@@ -83,7 +84,8 @@
   </include>
 
   <!-- Robot state publisher -->
-  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" if="$(arg publish_state)">
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+    if="$(arg publish_state)">
     <param name="publish_frequency" type="double" value="$(arg tf_pub_rate)" />
     <param name="tf_prefix" value="$(arg tf_prefix)" />
   </node>

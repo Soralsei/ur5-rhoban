@@ -42,7 +42,7 @@
 
   <!-- Controller configuration -->
   <arg name="controller_config_file"
-    default="$(find ur5e_gripper_gazebo)/config/ur5e_pos_controllers.yaml"
+    default="$(find ur5e_gripper_gazebo)/config/ur5e_controllers.yaml"
     doc="Config file used for defining the ROS-Control controllers." />
   <!-- <arg name="controllers"
     default="joint_state_controller shoulder_pan_joint_position_controller

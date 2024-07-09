@@ -37,7 +37,7 @@ if __name__ == '__main__':
     def timer_cb(event: rospy.timer.TimerEvent):
         global t, seq
         # t1 = rospy.Time.now()
-        T_world_target = ptf.translation_matrix([0.5, 0.3 * np.sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
+        T_world_target = ptf.translation_matrix([-0.5, 0.1 * np.sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
             
         goal = URGoToGoal()
         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')

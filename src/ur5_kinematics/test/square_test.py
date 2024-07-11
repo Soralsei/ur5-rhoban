@@ -1,8 +1,9 @@
 from math import sin
 import rospy
+from itertools import cycle
 from actionlib import SimpleActionClient
 from ur5_kinematics.msg import URGoToAction, URGoToGoal, URGoToResult
-from control_msgs.msg import FollowJointTrajectoryAction,  FollowJointTrajectoryGoal
+from control_msgs.msg import FollowJointTrajectoryAction,  FollowJointTrajectoryGoal, FollowJointTrajectoryResult
 from placo_utils.tf import tf as ptf
 
 import numpy as np
@@ -36,9 +37,10 @@ def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
 if __name__ == '__main__':
     
     def timer_cb(event: rospy.timer.TimerEvent):
-        global t, seq, controller_client
+        global t, seq, controller_client, path
         # t1 = rospy.Time.now()
-        T_world_target = ptf.translation_matrix([-0.5, 0.25 * sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
+        target = next(path)
+        T_world_target = ptf.translation_matrix(target) @ ptf.euler_matrix(np.pi, 0, 0)
             
         goal = URGoToGoal()
         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')
@@ -46,6 +48,7 @@ if __name__ == '__main__':
         goal.duration = rospy.Duration(2.0)
         goal.target_pose.header.seq = seq
         
+        rospy.loginfo(f'Generating trajectory to reach point {target}')
         client.send_goal_and_wait(goal)
         result: URGoToResult = client.get_result()
         
@@ -54,12 +57,23 @@ if __name__ == '__main__':
             traj_goal.trajectory = result.trajectory
             traj_goal.trajectory.header.stamp = rospy.Time.now()
             
+            rospy.loginfo(f'Got trajectory, executing...')
             controller_client.send_goal_and_wait(traj_goal)
+            res: FollowJointTrajectoryResult = controller_client.get_result()
+            if res.error_code == FollowJointTrajectoryResult.SUCCESSFUL:
+                rospy.loginfo(f'Trajectory execution success')
             
         t += np.pi
         seq += 1
     
     rospy.init_node("kinematics_test", sys.argv)
+    points = [
+        [-0.25, -0.125, 0.25],
+        [-0.25, 0.125, 0.25],
+        [-0.5, 0.125, 0.25],
+        [-0.5, -0.125, 0.25]
+    ]
+    path = cycle(points)
     
     controller_client = SimpleActionClient('/scaled_pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
     client = SimpleActionClient('goal_pose', URGoToAction)

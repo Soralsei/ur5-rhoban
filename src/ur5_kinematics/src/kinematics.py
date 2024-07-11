@@ -1,3 +1,6 @@
+# TODO: Remove unused parameters
+# TODO: Implement better trajectory duration handling (trajectory duration dichotomic search ?)
+# TODO: Implement joint mask/unmask services
 import rospy
 
 import numpy as np
@@ -71,7 +74,6 @@ class PlacoRos():
         self.effector_frame = self.prefix + rospy.get_param('~effector_frame', 'ee_link')
         
         joint_states = rospy.get_param('~joint_state_topic', '/joint_states')
-        controller_topic = rospy.get_param('~controller_topic', 'joint_group_eff_pos_controller/command')
         
         self.frequency = rospy.get_param('~dt', 100.)
         self_collide = rospy.get_param('~self_collide', False)
@@ -113,7 +115,6 @@ class PlacoRos():
         self.feedback = URGoToFeedback()
     
         self.state_sub = rospy.Subscriber(joint_states, JointState, self.joint_state_callback)
-        self.controller_pub = rospy.Publisher(controller_topic, Float64MultiArray, queue_size=10, tcp_nodelay=True)
         
         self.list_joints_srv = rospy.Service('list_active_joints', ListJoints, self.list_joints)
         self.set_active_joints_srv = rospy.Service('set_active_joints', SetActiveJoints, self.set_active_joints)
@@ -169,6 +170,7 @@ class PlacoRos():
                 if (time.monotonic() - start) >= goal.timeout:
                     break
                 if self.kinematics_server.is_preempt_requested():
+                    rospy.logwarn(f'URGoToAction : Preempted, aborting')
                     self.result.state = URGoToResult.CANCELLED
                     self.result.trajectory = JointTrajectory()
                     self.kinematics_server.set_preempted(self.result)
@@ -178,9 +180,9 @@ class PlacoRos():
                 t += dt
                 try:
                     self.effector_task.T_world_frame = target_frame
-                    t1 = time.monotonic()
+                    # t1 = time.monotonic()
                     self.solver.solve(True)
-                    t2 = time.monotonic()
+                    # t2 = time.monotonic()
                                         
                     self.effector_task.T_world_frame = self.T_world_target
                     # solve_times.append(t2 - t1)
@@ -199,8 +201,8 @@ class PlacoRos():
                     self.kinematics_server.set_aborted(result=self.result)
                     return
 
-        rospy.loginfo(f'Total solve time = {time.monotonic() - start}s')
         if self.target_reached():
+            rospy.loginfo(f'Total solve time = {time.monotonic() - start}s')
             success = URGoToResult.SUCCEEDED
             # print(f'Solved in {(rospy.Time.now() - start).to_sec()}s')
             # print(f"Solved in {count} solver iterations")
@@ -256,10 +258,9 @@ class PlacoRos():
 
 
     def target_reached(self):
-        # current_pose = self.robot.get_T_world_frame(self.effector_frame)
-        # orient_err = np.linalg.norm(target[:, :3] - current_pose[:, :3])
-        # pos_err = np.linalg.norm(target[:, 3] - current_pose[:, 3])
-        return self.effector_task.orientation().error_norm() < 1e-5 and self.effector_task.position().error_norm() < 1e-3
+        orient_err = self.effector_task.orientation().error_norm()
+        pos_err = self.effector_task.position().error_norm()
+        return orient_err < 1e-3 and pos_err < 1e-3
 
 
     def pose_to_matrix(self, pose: PoseStamped) -> np.ndarray:
@@ -307,7 +308,6 @@ class PlacoRos():
  
 
 if __name__=="__main__":
-    import signal
     rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.INFO)
     kinematics_server = PlacoRos()
     rospy.spin()

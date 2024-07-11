@@ -39,30 +39,18 @@
   <arg name="kinematics_params" default="$(find ur_description)/config/ur5e/default_kinematics.yaml" />
   <arg name="physical_params" default="$(find ur_description)/config/ur5e/physical_parameters.yaml" />
   <arg name="visual_params" default="$(find ur_description)/config/ur5e/visual_parameters.yaml" />
+  <arg name="rviz" default="false" />
 
   <!-- Controller configuration -->
   <arg name="controller_config_file"
-    default="$(find ur5e_gripper_gazebo)/config/ur5e_controllers.yaml"
+    default="$(find ur5e_gripper_description)/config/ur5e_controllers.yaml"
     doc="Config file used for defining the ROS-Control controllers." />
-  <!-- <arg name="controllers"
-    default="joint_state_controller shoulder_pan_joint_position_controller
-  shoulder_lift_joint_position_controller elbow_joint_position_controller
-  wrist_1_joint_position_controller wrist_2_joint_position_controller
-  wrist_3_joint_position_controller gripper_controller"
-    doc="Controllers that are activated by default." /> -->
-  <arg name="controllers"
-    default="joint_state_controller eff_joint_traj_controller"
-    doc="Controllers that are activated by default." />
-  <arg name="stopped_controllers" default="joint_group_eff_controller"
-    doc="Controllers that are initally loaded, but not started." />
 
-  <!-- <arg name="controller_config_file" default="$(find
-  ur5e_gripper_gazebo)/config/ur5e_traj_controllers.yaml" doc="Config file used for defining the
-  ROS-Control controllers."/> -->
-  <!-- <arg name="controllers" default="joint_state_controller eff_joint_traj_controller"
-  doc="Controllers that are activated by default."/> -->
-  <!-- <arg name="stopped_controllers" default="joint_group_eff_controller" doc="Controllers that
-  are initally loaded, but not started."/> -->
+  <arg name="controllers"
+    default="joint_state_controller pos_joint_traj_controller"
+    doc="Controllers that are activated by default." />
+  <arg name="stopped_controllers" default=""
+    doc="Controllers that are initally loaded, but not started." />
 
   <!-- robot_state_publisher configuration -->
   <arg name="publish_state" default="true" doc="Runs the robot_state_publisher node" />
@@ -100,4 +88,6 @@
     <arg name="stopped_controllers" value="$(arg stopped_controllers)" />
     <arg name="start_gazebo" value="$(arg start_gazebo)" />
   </include>
+
+  <node name="rviz" pkg="rviz" type="rviz" if="$(arg rviz)" />
 </launch>

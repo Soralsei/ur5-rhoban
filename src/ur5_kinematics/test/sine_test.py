@@ -1,7 +1,8 @@
 from math import sin
 import rospy
 from actionlib import SimpleActionClient
-from ur5_kinematics.msg import URGoToAction, URGoToGoal, URGoToFeedback, URGoToResult
+from ur5_kinematics.msg import URGoToAction, URGoToGoal, URGoToResult
+from control_msgs.msg import FollowJointTrajectoryAction,  FollowJointTrajectoryGoal
 from placo_utils.tf import tf as ptf
 
 import numpy as np
@@ -35,31 +36,42 @@ def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
 if __name__ == '__main__':
     
     def timer_cb(event: rospy.timer.TimerEvent):
-        global t, seq
+        global t, seq, controller_client
         # t1 = rospy.Time.now()
-        T_world_target = ptf.translation_matrix([-0.5, 0.1 * np.sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
+        T_world_target = ptf.translation_matrix([0.5, 0.25 * sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
             
         goal = URGoToGoal()
         goal.target_pose = matrix_to_pose(T_world_target, 'base_link')
         goal.timeout = 2.0
+        goal.duration = rospy.Duration(2.)
         goal.target_pose.header.seq = seq
         
-        client.send_goal_and_wait(goal, execute_timeout=rospy.Duration(2.0))
+        client.send_goal_and_wait(goal)
+        result: URGoToResult = client.get_result()
         
-        t += 1 / 100.
+        if result.state == URGoToResult.SUCCEEDED:
+            traj_goal = FollowJointTrajectoryGoal()
+            traj_goal.trajectory = result.trajectory
+            traj_goal.trajectory.header.stamp = rospy.Time.now()
+            
+            controller_client.send_goal_and_wait(traj_goal)
+            
+        t += np.pi
         seq += 1
     
     rospy.init_node("kinematics_test", sys.argv)
     
+    controller_client = SimpleActionClient('pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
     client = SimpleActionClient('goal_pose', URGoToAction)
     # Waits until the action server has started up and started
     client.wait_for_server()
+    controller_client.wait_for_server()
     
     rospy.loginfo(f'Connected to action server')
     
-    timer = rospy.Timer(rospy.Duration(1 / 100.), timer_cb)
+    timer = rospy.Timer(rospy.Duration(2.), timer_cb)
     
-    t = 0
+    t = np.pi / 2.
     seq = 0
     
     rospy.spin()

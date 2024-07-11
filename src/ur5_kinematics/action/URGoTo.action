@@ -1,6 +1,13 @@
 geometry_msgs/PoseStamped target_pose
-float64 timeout # In seconds
+duration duration # In seconds
+float32 timeout # In seconds
 ---
-bool success
+uint8 SUCCEEDED = 0
+uint8 FAILED = 1
+uint8 CANCELLED = 2
+
+uint8 state
+trajectory_msgs/JointTrajectory trajectory
 ---
-geometry_msgs/PoseStamped current_pose
+float32 position_error_norm
+float32 orientation_error_norm

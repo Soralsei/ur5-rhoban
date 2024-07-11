@@ -8,6 +8,8 @@ project(ur5_kinematics)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  control_msgs
+  trajectory_msgs
   geometry_msgs
   sensor_msgs
   std_msgs
@@ -15,8 +17,6 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
 )
 
-add_action_files(DIRECTORY action FILES URGoTo.action)
-generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -52,6 +52,7 @@ generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs)
 ##   * uncomment the generate_messages entry below
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
+
 ## Generate messages in the 'msg' folder
 # add_message_files(
 #   FILES
@@ -60,24 +61,22 @@ generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs)
 # )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
-
+add_service_files(
+  DIRECTORY
+  srv
+  FILES
+  ListJoints.srv
+  SetActiveJoints.srv
+  MaskJoints.srv
+  UnmaskJoints.srv
+  )
+  
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
-
+add_action_files(DIRECTORY action FILES URGoTo.action)
+      
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
+generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs trajectory_msgs)
+
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##

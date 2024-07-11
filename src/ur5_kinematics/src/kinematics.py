@@ -9,8 +9,12 @@ from placo_utils.tf import tf as ptf
 
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped, TransformStamped
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Header, Float64MultiArray
 from ur5_kinematics.msg import URGoToAction, URGoToFeedback, URGoToResult, URGoToGoal
+from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
+    SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
+    UnmaskJointsResponse, MaskJointsResponse
 
 import actionlib
 import tf2_ros as tf2
@@ -20,16 +24,6 @@ import rospkg
 import re, sys, time
 from threading import Lock, Condition
 
-JOINT_NAMES=[
-    'shoulder_pan_joint',
-    'shoulder_lift_joint',
-    'elbow_joint',
-    'wrist_1_joint',
-    'wrist_2_joint',
-    'wrist_3_joint',
-    'hande_left_finger_joint',
-    'hande_right_finger_joint',
-]
 
 UNMASKED_JOINT_NAMES=[
     'shoulder_pan_joint',
@@ -40,7 +34,6 @@ UNMASKED_JOINT_NAMES=[
     'wrist_3_joint'
 ]
 
-solve_times: deque = deque([], maxlen=1000)
 
 def parse_ros_packages(urdf: str):
     if not urdf:
@@ -49,19 +42,16 @@ def parse_ros_packages(urdf: str):
     rospack = rospkg.RosPack()
     
     packages = re.finditer(r"package:\/\/([^\/]+)([^\"]+)", urdf)
-    
     for package in packages:
         path = rospack.get_path(package.group(1))
-        # print((package.group(0), path, package.group(2)))
         urdf = urdf.replace(package.group(0), f'{path}/{package.group(2)}')
         
-    # print(urdf)
     return urdf
 
 class MissingParameterError(ValueError):
     pass
 
-class PlacoUR5Ros():
+class PlacoRos():
     def __init__(self):
         self.seq = 0
         self.robot_lock = Lock()
@@ -83,13 +73,8 @@ class PlacoUR5Ros():
         joint_states = rospy.get_param('~joint_state_topic', '/joint_states')
         controller_topic = rospy.get_param('~controller_topic', 'joint_group_eff_pos_controller/command')
         
-        self.frequency = rospy.get_param('~dt', 1000.)
+        self.frequency = rospy.get_param('~dt', 100.)
         self_collide = rospy.get_param('~self_collide', False)
-        
-        self.raw_state = rospy.get_param('~publish_raw_state', False)
-        self.publish_intermediate = rospy.get_param('~publish_intermediate', False)
-        rospy.loginfo(f'Only publish raw state : {self.raw_state}')
-        rospy.loginfo(f'Publish intermediate kinematics commands : {self.publish_intermediate}')
         
         pairs = rospy.get_param('~collision_pairs', '')
         self.robot = placo.RobotWrapper('', 0, urdf)
@@ -101,13 +86,7 @@ class PlacoUR5Ros():
         rospy.loginfo(f'number of joints : {len(self.robot.joint_names())}')
         
         self.solver = placo.KinematicsSolver(self.robot)
-        # Mask non moving joints (like gripper fingers for example)
-        # unmasked = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
-        
-        # for name in self.robot.joint_names():
-        #     if name not in unmasked:
-        #         print(f'Masking joint "{name}"')
-        #         self.solver.mask_dof(name)
+        self.active_joints = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
                 
         self.solver.mask_fbase(True)
         self.solver.enable_velocity_limits(True)
@@ -132,20 +111,22 @@ class PlacoUR5Ros():
         self.kinematics_server = actionlib.SimpleActionServer('goal_pose', URGoToAction, self.execute_goal, auto_start=False)
         self.result = URGoToResult()
         self.feedback = URGoToFeedback()
+    
+        self.state_sub = rospy.Subscriber(joint_states, JointState, self.joint_state_callback)
+        self.controller_pub = rospy.Publisher(controller_topic, Float64MultiArray, queue_size=10, tcp_nodelay=True)
         
-        if self.raw_state:
-            self.controller_pub = rospy.Publisher(controller_topic, JointState, queue_size=10, tcp_nodelay=True)
-            self.publish_callback: function = self.publish_raw_state
-        else:
-            self.state_sub = rospy.Subscriber(joint_states, JointState, self.joint_state_callback)
-            self.controller_pub = rospy.Publisher(controller_topic, Float64MultiArray, queue_size=10, tcp_nodelay=True)
-            self.publish_callback: function = self.publish_command
+        self.list_joints_srv = rospy.Service('list_active_joints', ListJoints, self.list_joints)
+        self.set_active_joints_srv = rospy.Service('set_active_joints', SetActiveJoints, self.set_active_joints)
+        self.mask_joints_srv = rospy.Service('mask_joints', MaskJoints, self.mask_joints)
+        self.unmask_joints_srv = rospy.Service('unmask_joints', UnmaskJoints, self.unmask_joints)
             
-        self.joint_state = np.zeros(self.n_joints, dtype=np.float32) if self.raw_state else None
+        self.joint_state = None
 
         self.T_world_target = np.zeros((4,4), dtype=np.float32)
         self.effector_task = self.solver.add_frame_task(self.effector_frame, self.T_world_target)
         self.effector_task.configure("effector", "soft", 1., 1.)
+        
+        self.spline = placo.CubicSpline()
         
         if visualize:
             self.viz = robot_viz(self.robot, "UR5")
@@ -155,50 +136,79 @@ class PlacoUR5Ros():
 
 
     def execute_goal(self, goal: URGoToGoal):
-        global solve_times
-        # freq = rospy.Rate(self.frequency)
-        success = False
+        success = URGoToResult.FAILED
+        trajectory = JointTrajectory()
+        trajectory.joint_names = self.active_joints
         
-        self.T_world_target = self.pose_to_matrix(goal.target_pose)
-        self.effector_task.T_world_frame = self.T_world_target
         rospy.logdebug(f'Received goal...')
         with self.state_received_cond:
             self.state_received_cond.wait_for(self.is_state_valid)
+
+        rospy.logdebug(f"Starting goal : {goal}")
+        
+        t = 0.
+        dt = 1. / self.frequency
+        goal_duration = goal.duration.to_sec()
+        
+        self.spline.clear()
+        self.spline.add_point(0.0, 0.0, 0.0)
+        self.spline.add_point(goal_duration, 1.0, 0.0)
+        # Precompute the interpolated frames
+        self.set_robot_q(self.joint_state)
+        
+        start_pose = self.robot.get_T_world_frame(self.effector_frame)
+        self.T_world_target = self.pose_to_matrix(goal.target_pose)
+        
+        target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, goal_duration, dt)
             
-        start = rospy.Time.now()
-        rospy.logdebug("Starting goal")
-        while (rospy.Time.now()- start).to_sec() < goal.timeout:
-            # loop_start = rospy.Time.now()
-            if self.kinematics_server.is_preempt_requested():
-                # rospy.logdebug('URGoToGoalAction : Preempted')
-                self.result.success = False
-                self.kinematics_server.set_preempted(self.result)
-                return
-            with self.robot_lock:
-                self.robot.update_kinematics()
+        t = 0.
+        trajectory.header = Header(self.seq, goal.target_pose.header.stamp, '')
+        start = time.monotonic()
+        with self.robot_lock:
+            for target_frame in target_frames:
+                if (time.monotonic() - start) >= goal.timeout:
+                    break
+                if self.kinematics_server.is_preempt_requested():
+                    self.result.state = URGoToResult.CANCELLED
+                    self.result.trajectory = JointTrajectory()
+                    self.kinematics_server.set_preempted(self.result)
+                    return
+                
+                self.robot.update_kinematics()  
+                t += dt
                 try:
-                    t1 = rospy.Time.now()
+                    self.effector_task.T_world_frame = target_frame
+                    t1 = time.monotonic()
                     self.solver.solve(True)
-                    # rospy.loginfo(f'IK solve time : {(rospy.Time.now() - t1).to_sec()}')
-                    solve_times.append((rospy.Time.now() - t1).to_sec())
+                    t2 = time.monotonic()
+                                        
+                    self.effector_task.T_world_frame = self.T_world_target
+                    # solve_times.append(t2 - t1)
+                    # print(f'Solve iteration time : {t2 - t1}')
+                    
+                    q = self.get_robot_q(self.active_joints)
+                    point = JointTrajectoryPoint()
+                    point.positions = q
+                    point.time_from_start = rospy.Duration.from_sec(t)
+                    
+                    trajectory.points.append(point)
+                    
                 except RuntimeError as e:
-                    rospy.logerror(f'IK solve failed : {e.with_traceback(None)}')
-                    self.result.success = False
+                    rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
+                    self.result.state = self.result.FAILED
                     self.kinematics_server.set_aborted(result=self.result)
                     return
-            
-            if self.target_reached():
-                # rospy.loginfo(f'Total solve time : {(rospy.Time.now() - start).to_sec()}')
-                success = True
-                self.publish_callback()
-                break
-            
-            if self.publish_intermediate:
-                self.publish_callback()
 
-            # rospy.loginfo(f'Total loop time : {(rospy.Time.now() - loop_start).to_sec()}')
-                
-        self.result.success = success
+        rospy.loginfo(f'Total solve time = {time.monotonic() - start}s')
+        if self.target_reached():
+            success = URGoToResult.SUCCEEDED
+            # print(f'Solved in {(rospy.Time.now() - start).to_sec()}s')
+            # print(f"Solved in {count} solver iterations")
+        else:
+            trajectory.points.clear()
+            
+        self.result.state = success
+        self.result.trajectory = trajectory
         self.kinematics_server.set_succeeded(self.result)
         # rospy.logdebug(f'Goal success : {success}')
 
@@ -206,44 +216,32 @@ class PlacoUR5Ros():
     def joint_state_callback(self, state: JointState) -> None:
         with self.state_received_cond:
             ## Reorder the received JointState message to match placo joint order
-            joint_state = sorted(zip(state.name, state.position), key = lambda i: list(self.robot.joint_names()).index(i[0]))
-            
-            for name, state in joint_state:
-                self.robot.set_joint(name, state)
-                
-            joint_state = [list(t) for t in zip(*joint_state)][1] # Take only q and not joint names
-            self.joint_state = joint_state
-            
+            self.joint_state = zip(state.name, state.position, state.velocity, state.effort)          
             self.state_received_cond.notify()
 
 
-    def publish_command(self) -> None:
-        unmasked_joints = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
-        robot_q = PlacoUR5Ros.get_robot_q(self.robot, unmasked_joints)
-        
-        q = Float64MultiArray(data=robot_q)
-        
-        rospy.logdebug('URGoToGoalAction : Publishing position...')
-        self.controller_pub.publish(q)
-
-
-    def publish_raw_state(self) -> None:
-        names = self.robot.joint_names()
-        Q = PlacoUR5Ros.get_robot_q(self.robot, names)
-        state = JointState()
-        state.header = Header(seq=self.seq, stamp=rospy.Time.now())
-        state.name = names
-        state.position = Q
-        self.controller_pub.publish(state)
-
-
-    @staticmethod
-    def get_robot_q(robot: placo.RobotWrapper, joint_names: Iterable) -> Iterable:
+    def get_robot_q(self, joint_names: Iterable) -> Iterable:
         robot_q = []
         for name in joint_names:
-            robot_q.append(robot.get_joint(name))
+            robot_q.append(self.robot.get_joint(name))
         return robot_q
+    
+    
+    def set_robot_q(self, joint_states: Iterable) -> None:
+        for joint_name, joint_position, _, _ in joint_states:
+            self.robot.set_joint(joint_name, joint_position)
+        self.robot.update_kinematics()
 
+
+    def precompute_trajectory_frames(self, start_pose, target_pose, goal_duration: float, dt: float) -> Iterable:
+        t = 0.
+        target_frames = []
+        while t < goal_duration:
+            t += dt
+            frame = placo.interpolate_frames(start_pose, target_pose, self.spline.pos(t))
+            target_frames.append(frame)
+            
+        return target_frames
 
     def visualization_callback(self, _: rospy.timer.TimerEvent) -> None:
         with self.robot_lock:
@@ -258,9 +256,10 @@ class PlacoUR5Ros():
 
 
     def target_reached(self):
-        orient_err = self.effector_task.orientation().error()
-        pos_err = self.effector_task.position().error()
-        return np.linalg.norm(orient_err) < 1e-5 and np.linalg.norm(pos_err) < 1e-3
+        # current_pose = self.robot.get_T_world_frame(self.effector_frame)
+        # orient_err = np.linalg.norm(target[:, :3] - current_pose[:, :3])
+        # pos_err = np.linalg.norm(target[:, 3] - current_pose[:, 3])
+        return self.effector_task.orientation().error_norm() < 1e-5 and self.effector_task.position().error_norm() < 1e-3
 
 
     def pose_to_matrix(self, pose: PoseStamped) -> np.ndarray:
@@ -281,26 +280,34 @@ class PlacoUR5Ros():
         
         return T @ R
 
+
+    def list_joints(self, _) -> ListJointsResponse:
+        return ListJointsResponse(self.robot.joint_names())
+    
+    def set_active_joints(self, request) -> SetActiveJointsResponse:
+        for joint in request.joints:
+            if joint not in self.robot.joint_names():
+                return SetActiveJointsResponse(SetActiveJointsResponse.NOT_FOUND)
+            
+        self.active_joints.clear()
+        with self.robot_lock:
+            for joint in self.robot.joint_names():
+                if joint in request.joints:
+                    self.active_joints.append(joint)
+                    
+        return SetActiveJointsResponse(SetActiveJointsResponse.SUCCEEDED, self.active_joints)
+    
+    
+    def mask_joints(self, request) -> MaskJointsResponse:
+        pass
+    
+    
+    def unmask_joints(self, request) -> UnmaskJointsResponse:
+        pass
  
 
 if __name__=="__main__":
     import signal
     rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.INFO)
-    kinematics_server = PlacoUR5Ros()
-    running = True
-    
-    def signal_handler(_, _2):
-        global running
-        running = False
-        
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    while running:
-        pass
-    
-    with open('log/solve_times.txt', 'a') as f:
-        for time in solve_times:
-            f.write(f'{time}\n')
-        print(f'Average solve time : {np.average(solve_times)}s', file=sys.stderr)
-    
-    rospy.signal_shutdown('SIGINT')
+    kinematics_server = PlacoRos()
+    rospy.spin()

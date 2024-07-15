@@ -1,11 +1,10 @@
-# TODO: Remove unused parameters
 # TODO: Implement better trajectory duration handling (trajectory duration dichotomic search ?)
+# TODO: Verify check_acceleration method
 # TODO: Implement joint mask/unmask services
 import rospy
 
 import numpy as np
 from collections.abc import Iterable
-from collections import deque
 import placo
 from placo_utils.visualization import robot_viz, frame_viz, robot_frame_viz
 from placo_utils.tf import tf as ptf
@@ -13,7 +12,8 @@ from placo_utils.tf import tf as ptf
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from std_msgs.msg import Header, Float64MultiArray
+from std_msgs.msg import Header
+
 from ur5_kinematics.msg import URGoToAction, URGoToFeedback, URGoToResult, URGoToGoal
 from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
     SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
@@ -54,6 +54,9 @@ def parse_ros_packages(urdf: str):
 class MissingParameterError(ValueError):
     pass
 
+class IKError(RuntimeError):
+    pass
+
 class PlacoRos():
     def __init__(self):
         self.seq = 0
@@ -76,6 +79,9 @@ class PlacoRos():
         joint_states = rospy.get_param('~joint_state_topic', '/joint_states')
         
         self.frequency = rospy.get_param('~dt', 100.)
+        self.conservative_duration = rospy.get_param('~conservative_duration', 10.0) # In seconds
+        self.max_acceleration = rospy.get_param('~max_acceleration', 1.0) # In m.s^-2
+        self.max_search_iter = rospy.get_param('~max_search_iter', 10) # In iterations
         self_collide = rospy.get_param('~self_collide', False)
         
         pairs = rospy.get_param('~collision_pairs', '')
@@ -140,86 +146,147 @@ class PlacoRos():
         success = URGoToResult.FAILED
         trajectory = JointTrajectory()
         trajectory.joint_names = self.active_joints
+        trajectory.header = Header(self.seq, goal.target_pose.header.stamp, '')
         
         rospy.logdebug(f'Received goal...')
         with self.state_received_cond:
             self.state_received_cond.wait_for(self.is_state_valid)
-
-        rospy.logdebug(f"Starting goal : {goal}")
-        
-        t = 0.
+            self.set_robot_q(self.joint_state)
+            
         dt = 1. / self.frequency
         goal_duration = goal.duration.to_sec()
-        
-        self.spline.clear()
-        self.spline.add_point(0.0, 0.0, 0.0)
-        self.spline.add_point(goal_duration, 1.0, 0.0)
-        # Precompute the interpolated frames
-        self.set_robot_q(self.joint_state)
-        
         start_pose = self.robot.get_T_world_frame(self.effector_frame)
         self.T_world_target = self.pose_to_matrix(goal.target_pose)
-        
-        target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, goal_duration, dt)
             
+        rospy.logdebug(f"Starting goal : {goal}")
         t = 0.
-        trajectory.header = Header(self.seq, goal.target_pose.header.stamp, '')
         start = time.monotonic()
         with self.robot_lock:
-            for target_frame in target_frames:
-                if (time.monotonic() - start) >= goal.timeout:
-                    break
-                if self.kinematics_server.is_preempt_requested():
-                    rospy.logwarn(f'URGoToAction : Preempted, aborting')
-                    self.result.state = URGoToResult.CANCELLED
-                    self.result.trajectory = JointTrajectory()
-                    self.kinematics_server.set_preempted(self.result)
-                    return
-                
-                self.robot.update_kinematics()  
-                t += dt
+            if goal_duration > 0:
+                self.init_spline(goal_duration)
+                target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, goal_duration, dt)
                 try:
-                    self.effector_task.T_world_frame = target_frame
-                    # t1 = time.monotonic()
-                    self.solver.solve(True)
-                    # t2 = time.monotonic()
-                                        
-                    self.effector_task.T_world_frame = self.T_world_target
-                    # solve_times.append(t2 - t1)
-                    # print(f'Solve iteration time : {t2 - t1}')
-                    
-                    q = self.get_robot_q(self.active_joints)
-                    point = JointTrajectoryPoint()
-                    point.positions = q
-                    point.time_from_start = rospy.Duration.from_sec(t)
-                    
-                    trajectory.points.append(point)
-                    
-                except RuntimeError as e:
-                    rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
-                    self.result.state = self.result.FAILED
-                    self.kinematics_server.set_aborted(result=self.result)
+                    if self.solve_with_targets(trajectory, target_frames, dt, start, goal.timeout):
+                        success = URGoToResult.SUCCEEDED
+                except IKError:
                     return
-
-        if self.target_reached():
-            rospy.loginfo(f'Total solve time = {time.monotonic() - start}s')
-            success = URGoToResult.SUCCEEDED
-            # print(f'Solved in {(rospy.Time.now() - start).to_sec()}s')
-            # print(f"Solved in {count} solver iterations")
-        else:
-            trajectory.points.clear()
+            else:
+                current_trajectory = JointTrajectory(trajectory.header, self.active_joints, [])
+                next_trajectory = JointTrajectory(trajectory.header, self.active_joints, [])
+                try:
+                    min_duration = 0.
+                    max_duration = self.conservative_duration
+                    previous = False
+                    reached = False
+                    i = 0
+                    while i < self.max_search_iter:
+                        current_duration = (max_duration + min_duration) / 2.
+                        rospy.logdebug(f'Current duration for search : {current_duration}')
+                        self.init_spline(current_duration)
+                        target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, current_duration, dt)
+                        valid_accel = self.check_accelerations(target_frames, dt)
+                        
+                        if valid_accel:
+                            previous = reached
+                            q = self.robot.state.q.copy()
+                            reached = self.solve_with_targets(next_trajectory, target_frames, dt, start, goal.timeout)
+                            # Reset robot model state after exploration
+                            self.robot.state.q = q
+                            self.robot.update_kinematics()
+                            
+                            if reached:
+                                # Swap pointers
+                                tmp = next_trajectory
+                                next_trajectory = current_trajectory
+                                current_trajectory = tmp
+                                max_duration = current_duration
+                            else:
+                                min_duration = current_duration
+                            next_trajectory.points.clear()
+                        else:
+                            min_duration = current_duration
+                        i += 1
+                    
+                    if previous:
+                        success = URGoToResult.SUCCEEDED
+                        trajectory = current_trajectory
+                        # print(current_trajectory)
+                except IKError:
+                    return
+                except TimeoutError:
+                    trajectory = current_trajectory
             
         self.result.state = success
         self.result.trajectory = trajectory
         self.kinematics_server.set_succeeded(self.result)
-        # rospy.logdebug(f'Goal success : {success}')
-
+            
 
     def joint_state_callback(self, state: JointState) -> None:
         with self.state_received_cond:
             ## Reorder the received JointState message to match placo joint order
             self.joint_state = zip(state.name, state.position, state.velocity, state.effort)          
             self.state_received_cond.notify()
+
+
+    def solve_with_targets(self, trajectory, target_frames, dt, start, timeout, update_model = True) -> bool:
+        t = 0.
+        for target_frame in target_frames:
+            t += dt
+            if (time.monotonic() - start) >= timeout:
+                raise TimeoutError("Solver timeout")
+            if self.kinematics_server.is_preempt_requested():
+                self.handle_preempt()
+                return False
+            if not self.solver_tick(target_frame, update_model):
+                raise IKError("Solver failed")
+            
+            q = self.get_robot_q(self.active_joints)
+            point = JointTrajectoryPoint()
+            point.positions = q
+            point.time_from_start = rospy.Duration.from_sec(t)
+            
+            trajectory.points.append(point)
+            
+        return self.target_reached()
+
+
+    def solver_tick(self, target_frame, update_model = True) -> bool:
+        try:
+            self.effector_task.T_world_frame = target_frame
+            t1 = time.monotonic()
+            self.solver.solve(update_model)
+            t2 = time.monotonic()
+            # rospy.logdebug(f'Solve iteration time : {t2 - t1}')
+            self.robot.update_kinematics()
+        except RuntimeError as e:
+            rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
+            self.result.state = self.result.FAILED
+            self.kinematics_server.set_aborted(result=self.result)
+            return False
+        
+        return True
+
+
+    def check_accelerations(self, target_frames: list, dt: float) -> bool:
+        v1 = (target_frames[1][:3, 3] - target_frames[0][:3, 3]) / dt
+        v2 = (target_frames[2][:3, 3] - target_frames[1][:3, 3]) / dt
+        
+        # print(f'v1 = {v1}')
+        # print(f'v2 = {v2}')
+        accel = (v2 - v1) / dt
+        # print(f'a = {accel}')
+        
+        # No need to compute deceleration since Cubic spline is symmetric at ends ?
+        v1 = (target_frames[-1][:3, 3] - target_frames[-2][:3, 3]) / dt
+        v2 = (target_frames[-2][:3, 3] - target_frames[-3][:3, 3]) / dt
+        decel = (v2 - v1) / dt
+        
+        # max_accel = max(abs(np.linalg.norm(accel)), abs(np.linalg.norm(decel)))
+        accel_norm = abs(np.linalg.norm(accel))
+        decel_norm = abs(np.linalg.norm(decel))
+        # print(f'Max acceleration : {accel_norm}')
+        
+        return max(accel_norm, decel_norm) < self.max_acceleration
 
 
     def get_robot_q(self, joint_names: Iterable) -> Iterable:
@@ -233,7 +300,13 @@ class PlacoRos():
         for joint_name, joint_position, _, _ in joint_states:
             self.robot.set_joint(joint_name, joint_position)
         self.robot.update_kinematics()
-
+        
+        
+    def init_spline(self, goal_duration: float) -> None:
+        self.spline.clear()
+        self.spline.add_point(0.0, 0.0, 0.0)
+        self.spline.add_point(goal_duration, 1.0, 0.0)
+        
 
     def precompute_trajectory_frames(self, start_pose, target_pose, goal_duration: float, dt: float) -> Iterable:
         t = 0.
@@ -244,6 +317,7 @@ class PlacoRos():
             target_frames.append(frame)
             
         return target_frames
+    
 
     def visualization_callback(self, _: rospy.timer.TimerEvent) -> None:
         with self.robot_lock:
@@ -258,8 +332,12 @@ class PlacoRos():
 
 
     def target_reached(self):
-        orient_err = self.effector_task.orientation().error_norm()
-        pos_err = self.effector_task.position().error_norm()
+        # orient_err = self.effector_task.orientation().error_norm()
+        # pos_err = self.effector_task.position().error_norm()
+        current_pose = self.robot.get_T_world_frame(self.effector_frame)
+        orient_err = np.linalg.norm(self.T_world_target[:, :3] - current_pose[:, :3])
+        pos_err = np.linalg.norm(self.T_world_target[:, 3] - current_pose[:, 3])
+        
         return orient_err < 1e-3 and pos_err < 1e-3
 
 
@@ -282,8 +360,16 @@ class PlacoRos():
         return T @ R
 
 
+    def handle_preempt(self):
+        rospy.logwarn(f'URGoToAction : Preempted, aborting')
+        self.result.state = URGoToResult.CANCELLED
+        self.result.trajectory = JointTrajectory()
+        self.kinematics_server.set_preempted(self.result)
+    
+
     def list_joints(self, _) -> ListJointsResponse:
         return ListJointsResponse(self.robot.joint_names())
+    
     
     def set_active_joints(self, request) -> SetActiveJointsResponse:
         for joint in request.joints:
@@ -308,6 +394,6 @@ class PlacoRos():
  
 
 if __name__=="__main__":
-    rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.INFO)
+    rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.DEBUG)
     kinematics_server = PlacoRos()
     rospy.spin()

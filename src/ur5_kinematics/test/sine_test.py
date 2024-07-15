@@ -3,6 +3,7 @@ import rospy
 from actionlib import SimpleActionClient
 from ur5_kinematics.msg import URGoToAction, URGoToGoal, URGoToResult
 from control_msgs.msg import FollowJointTrajectoryAction,  FollowJointTrajectoryGoal
+from trajectory_msgs.msg import JointTrajectory
 from placo_utils.tf import tf as ptf
 
 import numpy as np
@@ -33,11 +34,22 @@ def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
     return pose
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':    
+    rospy.init_node("kinematics_test", sys.argv)
     
-    def timer_cb(event: rospy.timer.TimerEvent):
-        global t, seq, controller_client
-        # t1 = rospy.Time.now()
+    controller_client = SimpleActionClient('/scaled_pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
+    client = SimpleActionClient('goal_pose', URGoToAction)
+    trajectory_pub = rospy.Publisher('ik/trajectory', JointTrajectory, queue_size=10)
+    # Waits until the action server has started up and started
+    client.wait_for_server()
+    controller_client.wait_for_server()
+    
+    rospy.loginfo(f'Connected to action server')
+    
+    t = np.pi / 2.
+    seq = 0
+    freq = rospy.Rate(0.5)
+    while True:
         T_world_target = ptf.translation_matrix([-0.5, 0.25 * sin(t), 0.25]) @ ptf.euler_matrix(np.pi, 0, 0)
             
         goal = URGoToGoal()
@@ -54,24 +66,10 @@ if __name__ == '__main__':
             traj_goal.trajectory = result.trajectory
             traj_goal.trajectory.header.stamp = rospy.Time.now()
             
-            controller_client.send_goal_and_wait(traj_goal)
+            trajectory_pub.publish(result.trajectory)
+            # controller_client.send_goal_and_wait(traj_goal)
             
         t += np.pi
         seq += 1
-    
-    rospy.init_node("kinematics_test", sys.argv)
-    
-    controller_client = SimpleActionClient('/scaled_pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
-    client = SimpleActionClient('goal_pose', URGoToAction)
-    # Waits until the action server has started up and started
-    client.wait_for_server()
-    controller_client.wait_for_server()
-    
-    rospy.loginfo(f'Connected to action server')
-    
-    timer = rospy.Timer(rospy.Duration(2.), timer_cb)
-    
-    t = np.pi / 2.
-    seq = 0
-    
-    rospy.spin()
+        freq.sleep()
+        

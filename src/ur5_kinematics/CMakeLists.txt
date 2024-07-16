@@ -8,6 +8,7 @@ project(ur5_kinematics)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  dynamic_reconfigure
   control_msgs
   trajectory_msgs
   geometry_msgs
@@ -93,10 +94,9 @@ generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs trajectory_msgs)
 ##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+generate_dynamic_reconfigure_options(
+  cfg/PlacoRos.cfg
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -168,6 +168,7 @@ catkin_install_python(PROGRAMS
   src/kinematics.py
   test/sine_test.py
   test/square_test.py
+  test/path_test.py
   script/auto_sample_collisions.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

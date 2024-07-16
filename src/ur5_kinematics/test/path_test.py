@@ -11,8 +11,6 @@ import numpy as np
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
 
-# import tf2_geometry_msgs, tf2_ros
-
 import sys
 
 def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
@@ -37,13 +35,21 @@ def matrix_to_pose(matrix: np.ndarray, frame: str = 'base_link') -> np.ndarray:
 
 if __name__ == '__main__':    
     rospy.init_node("kinematics_test", sys.argv)
-    points = [
-        [-0.2, -0.15, 0.35],
-        [-0.2, 0.15, 0.35],
-        [-0.5, 0.15, 0.35],
-        [-0.5, -0.15, 0.35]
+    path = [
+        [-0.3, -0.15, 0.35],
+        [-0.3,  0.00, 0.40],
+        [-0.3, 0.15, 0.35],
+        [-0.45, 0.15, 0.30],
+        [-0.6, 0.15, 0.35],
+        [-0.6, 0.00, 0.40],
+        [-0.6, -0.15, 0.35],
     ]
-    path = cycle(points)
+    # path = [
+    #     [-0.2, -0.07, 0.35],
+    #     [-0.2, 0.07, 0.35],
+    #     [-0.5, 0.07, 0.35],
+    #     [-0.5, -0.07, 0.35]
+    # ]
     
     # controller_client = SimpleActionClient('/scaled_pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
     controller_client = SimpleActionClient('/scaled_pos_joint_traj_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
@@ -55,9 +61,10 @@ if __name__ == '__main__':
     
     rospy.loginfo(f'Connected to action server')
     
-    freq = rospy.Rate(0.5)
+    # freq = rospy.Rate(0.5)
     t = np.pi / 2.
     seq = 0
+    path = cycle(path)
     while True:
         target = next(path)
         T_world_target = ptf.translation_matrix(target) @ ptf.euler_matrix(np.pi, 0, 0)
@@ -76,6 +83,7 @@ if __name__ == '__main__':
         if result.state == URGoToResult.SUCCEEDED:
             traj_goal = FollowJointTrajectoryGoal()
             traj_goal.trajectory = result.trajectory
+            print(traj_goal.trajectory.points[-1])
             # traj_goal.trajectory.header.stamp = rospy.Time.now()
             
             rospy.loginfo(f'Got trajectory, executing...')
@@ -86,4 +94,4 @@ if __name__ == '__main__':
             
         t += np.pi
         seq += 1
-        freq.sleep()
+        # freq.sleep()

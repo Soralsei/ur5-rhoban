@@ -47,7 +47,7 @@
     doc="Config file used for defining the ROS-Control controllers." />
 
   <arg name="controllers"
-    default="joint_state_controller pos_joint_traj_controller"
+    default="joint_state_controller pos_joint_traj_controller gripper_controller"
     doc="Controllers that are activated by default." />
   <arg name="stopped_controllers" default=""
     doc="Controllers that are initally loaded, but not started." />

@@ -41,7 +41,7 @@ UNMASKED_JOINT_NAMES=[
 ]
 
 
-def parse_ros_packages(urdf: str):
+def parse_ros_packages(urdf: str) -> str:
     if not urdf:
         raise TypeError(f"parse_ros_packages: URDF missing")
     
@@ -54,6 +54,12 @@ def parse_ros_packages(urdf: str):
         
     return urdf
 
+def continuous_to_fixed(urdf: str) -> str:
+    if not urdf:
+        raise TypeError(f"parse_ros_packages: URDF missing")
+    return urdf.replace('continuous', 'fixed')
+    
+
 class MissingParameterError(ValueError):
     pass
 
@@ -64,19 +70,19 @@ class KinematicsServer():
     def __init__(self):
         self.seq = 0
         self.robot_lock = Lock()
-        state_lock = Lock()
-        self.state_received_cond = Condition(state_lock)
+        self.state_received_cond = Condition(self.robot_lock)
         urdf = rospy.get_param('/robot_description')
         if not urdf:
             rospy.signal_shutdown()
             raise MissingParameterError("Missing /robot_description parameter, did you publish your robot's description ?")
 
         urdf = parse_ros_packages(urdf)
+        urdf = continuous_to_fixed(urdf)
         
         visualize = rospy.get_param('~visualize', False)
         
         self.prefix = rospy.get_param('~link_prefix', '')
-        self.base_frame = self.prefix + rospy.get_param('~base_frame', 'base_link')
+        self.base_frame = rospy.get_param('~base_frame', 'base_link')
         self.effector_frame = self.prefix + rospy.get_param('~effector_frame', 'ee_link')
         
         joint_states = rospy.get_param('~joint_state_topic', '/joint_states')
@@ -92,13 +98,17 @@ class KinematicsServer():
         self.robot = placo.RobotWrapper('', 0, urdf)
         if pairs:
             self.robot.load_collision_pairs(pairs)
-            
+        
+        
         self.n_joints = len(self.robot.joint_names())
         rospy.loginfo(f'Joint names : {list(self.robot.joint_names())}')
         rospy.loginfo(f'number of joints : {len(self.robot.joint_names())}')
         
         self.solver = placo.KinematicsSolver(self.robot)
         self.active_joints = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
+        self.masked_joints = [joint for joint in self.robot.joint_names() if not joint.startswith(self.prefix)]
+        for joint in self.masked_joints:
+            self.solver.mask_dof(joint)
                 
         self.solver.mask_fbase(True)
         self.solver.enable_velocity_limits(True)
@@ -120,16 +130,17 @@ class KinematicsServer():
         self.tf2_buffer = tf2.Buffer(rospy.Duration(20.0))
         self.tf2_listener = tf2.TransformListener(self.tf2_buffer)
         
-        self.kinematics_server = actionlib.SimpleActionServer('goal_pose', URGoToAction, self.execute_goal, auto_start=False)
+        self.kinematics_server = actionlib.SimpleActionServer('~goal_pose', URGoToAction, self.execute_goal, auto_start=False)
         self.result = URGoToResult()
         self.feedback = URGoToFeedback()
     
         self.state_sub = rospy.Subscriber(joint_states, JointState, self.joint_state_callback)
         
-        self.list_joints_srv = rospy.Service('list_active_joints', ListJoints, self.list_joints)
-        self.set_active_joints_srv = rospy.Service('set_active_joints', SetActiveJoints, self.set_active_joints)
-        self.mask_joints_srv = rospy.Service('mask_joints', MaskJoints, self.mask_joints)
-        self.unmask_joints_srv = rospy.Service('unmask_joints', UnmaskJoints, self.unmask_joints)
+        self.list_joints_srv = rospy.Service('~list_joints', ListJoints, self.list_joints)
+        self.list_joints_srv = rospy.Service('~list_active_joints', ListJoints, self.list_active_joints)
+        self.set_active_joints_srv = rospy.Service('~set_active_joints', SetActiveJoints, self.set_active_joints)
+        self.mask_joints_srv = rospy.Service('~mask_joints', MaskJoints, self.mask_joints)
+        self.unmask_joints_srv = rospy.Service('~unmask_joints', UnmaskJoints, self.unmask_joints)
             
         self.reconfigure_server = dynamic_reconfigure.server.Server(PlacoRosConfig, self.reconfigure)
             
@@ -213,7 +224,7 @@ class KinematicsServer():
                     if current_valid:
                         success = URGoToResult.SUCCEEDED
                         joint_trajectory = current_trajectory
-                        print(current_trajectory)
+                        
                 except IKError:
                     return
                 except TimeoutError:
@@ -227,7 +238,7 @@ class KinematicsServer():
     def joint_state_callback(self, state: JointState) -> None:
         with self.state_received_cond:
             ## Reorder the received JointState message to match placo joint order
-            self.joint_state = zip(state.name, state.position, state.velocity, state.effort)          
+            self.joint_state = zip(state.name, state.position, state.velocity, state.effort)
             self.state_received_cond.notify()
 
 
@@ -263,6 +274,9 @@ class KinematicsServer():
             self.robot.update_kinematics()
         except RuntimeError as e:
             rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
+            rospy.logerr(f'Start transform : {self.robot.get_T_world_frame(self.effector_frame)}')
+            rospy.logerr(f'Target transform : {target_frame}')
+            self.solver.dump_status()
             self.result.state = self.result.FAILED
             self.kinematics_server.set_aborted(result=self.result)
             return False
@@ -312,7 +326,10 @@ class KinematicsServer():
     
     def set_robot_q(self, joint_states: Iterable) -> None:
         for joint_name, joint_position, _, _ in joint_states:
-            self.robot.set_joint(joint_name, joint_position)
+            try:
+                self.robot.set_joint(joint_name, joint_position)
+            except:
+                pass
         self.robot.update_kinematics()
         
 
@@ -371,6 +388,10 @@ class KinematicsServer():
         self.kinematics_server.set_preempted(self.result)
     
 
+    def list_active_joints(self, _) -> ListJointsResponse:
+        return ListJointsResponse(self.active_joints)
+    
+    
     def list_joints(self, _) -> ListJointsResponse:
         return ListJointsResponse(self.robot.joint_names())
     

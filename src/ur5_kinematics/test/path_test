@@ -17,11 +17,14 @@ if __name__ == '__main__':
     ]
     parser = argparse.ArgumentParser()
     parser.add_argument('--type', '-t', default='real', choices=['real', 'simulated'])
+    parser.add_argument('--prefix', '-p', default='')
     args = parser.parse_args()
     controller = '/scaled_pos_joint_traj_controller/follow_joint_trajectory'
-    if args == 'simulated':
+    
+    if args.type == 'simulated':
+        print("Simulated environment...")
         controller = '/pos_joint_traj_controller/follow_joint_trajectory'
-    test = PathTest(controller, '/goal_pose', path)
+    test = PathTest(controller, '/kinematics_server/goal_pose', path, prefix=args.prefix)
     
     while True:
         test.update()

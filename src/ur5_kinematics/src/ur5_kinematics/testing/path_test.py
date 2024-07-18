@@ -9,8 +9,8 @@ from ur5_kinematics.msg import URGoToResult
 from control_msgs.msg import FollowJointTrajectoryGoal, FollowJointTrajectoryResult
 
 class PathTest(BaseTest):
-    def __init__(self, controller_topic: str, kinematics_topic:str, path: Iterable, loop: bool = True, segment_duration: float = 0.0):
-        super(PathTest, self).__init__(controller_topic, kinematics_topic)
+    def __init__(self, controller_topic: str, kinematics_topic:str, path: Iterable, prefix:str = '', loop: bool = True, segment_duration: float = 0.0):
+        super(PathTest, self).__init__(controller_topic, kinematics_topic, prefix)
         self.path = path
         self.seq = 0
         self.segment_duration = segment_duration
@@ -36,5 +36,6 @@ class PathTest(BaseTest):
 
             if res.error_code == FollowJointTrajectoryResult.SUCCESSFUL:
                 rospy.loginfo(f'Trajectory execution success')
-                
+        else:
+            raise RuntimeError('Solver failed')
         self.seq += 1

@@ -2,6 +2,7 @@
 import sys
 import rospy
 from ur5_kinematics.testing import PathTest
+import argparse
 
 if __name__ == '__main__':    
     rospy.init_node("kinematics_test", sys.argv)
@@ -14,7 +15,13 @@ if __name__ == '__main__':
         [-0.6, 0.00, 0.40],
         [-0.6, -0.15, 0.35],
     ]
-    test = PathTest('/pos_joint_traj_controller/follow_joint_trajectory', '/goal_pose', path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--type', '-t', default='real', choices=['real', 'simulated'])
+    args = parser.parse_args()
+    controller = '/scaled_pos_joint_traj_controller/follow_joint_trajectory'
+    if args == 'simulated':
+        controller = '/pos_joint_traj_controller/follow_joint_trajectory'
+    test = PathTest(controller, '/goal_pose', path)
     
     while True:
         test.update()

@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+import sys
+import rospy
+from ur5_kinematics.server import KinematicsServer
+
+
+if __name__ == '__main__':
+    rospy.init_node("kinematics_server", sys.argv, log_level=rospy.DEBUG)
+    server = KinematicsServer()
+    rospy.spin()

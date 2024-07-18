@@ -66,6 +66,8 @@
   <build_depend>trajectory_msgs</build_depend>
 
 
+  <depend>rospy</depend>
+
   <!-- The export tag contains other, unspecified, tags -->
   <export>
     <!-- Other tools can request additional information be placed here -->

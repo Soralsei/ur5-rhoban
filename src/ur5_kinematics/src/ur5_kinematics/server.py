@@ -2,7 +2,7 @@
 # TODO: Verify check_acceleration method
 # TODO: Implement joint mask/unmask services
 import rospy
-from dynamic_reconfigure.server import Server
+import dynamic_reconfigure.server
 from ur5_kinematics.cfg import PlacoRosConfig
 
 import numpy as np
@@ -17,6 +17,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Header
 
 from ur5_kinematics.msg import URGoToAction, URGoToFeedback, URGoToResult, URGoToGoal
+from ur5_kinematics.trajectory import Trajectory
 from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
     SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
     UnmaskJointsResponse, MaskJointsResponse
@@ -59,7 +60,7 @@ class MissingParameterError(ValueError):
 class IKError(RuntimeError):
     pass
 
-class PlacoRos():
+class KinematicsServer():
     def __init__(self):
         self.seq = 0
         self.robot_lock = Lock()
@@ -130,13 +131,13 @@ class PlacoRos():
         self.mask_joints_srv = rospy.Service('mask_joints', MaskJoints, self.mask_joints)
         self.unmask_joints_srv = rospy.Service('unmask_joints', UnmaskJoints, self.unmask_joints)
             
+        self.reconfigure_server = dynamic_reconfigure.server.Server(PlacoRosConfig, self.reconfigure)
+            
         self.joint_state = None
 
         self.T_world_target = np.zeros((4,4), dtype=np.float32)
         self.effector_task = self.solver.add_frame_task(self.effector_frame, self.T_world_target)
         self.effector_task.configure("effector", "soft", 1., 1.)
-        
-        self.spline = placo.CubicSpline()
         
         if visualize:
             self.viz = robot_viz(self.robot, "UR5")
@@ -147,9 +148,9 @@ class PlacoRos():
 
     def execute_goal(self, goal: URGoToGoal):
         success = URGoToResult.FAILED
-        trajectory = JointTrajectory()
-        trajectory.joint_names = self.active_joints
-        trajectory.header = Header(self.seq, goal.target_pose.header.stamp, '')
+        joint_trajectory = JointTrajectory()
+        joint_trajectory.joint_names = self.active_joints
+        joint_trajectory.header = Header(self.seq, goal.target_pose.header.stamp, '')
         
         rospy.logdebug(f'Received goal...')
         with self.state_received_cond:
@@ -166,33 +167,32 @@ class PlacoRos():
         start = time.monotonic()
         with self.robot_lock:
             if goal_duration > 0:
-                self.init_spline(goal_duration)
-                target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, goal_duration, dt)
+                ee_trajectory = Trajectory(start_pose, self.T_world_target, goal_duration)
+                target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                 try:
-                    if self.solve_with_targets(trajectory, target_frames, dt, start, goal.timeout):
+                    if self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout):
                         success = URGoToResult.SUCCEEDED
                 except IKError:
                     return
             else:
-                current_trajectory = JointTrajectory(trajectory.header, self.active_joints, [])
-                next_trajectory = JointTrajectory(trajectory.header, self.active_joints, [])
+                current_trajectory = JointTrajectory(joint_trajectory.header, self.active_joints, [])
+                next_trajectory = JointTrajectory(joint_trajectory.header, self.active_joints, [])
                 try:
+                    current_valid = False
+                    
                     min_duration = 0.
                     max_duration = self.conservative_duration
-                    previous = False
-                    reached = False
-                    i = 0
-                    while i < self.max_search_iter:
+                    for _ in range(self.max_search_iter):
                         current_duration = (max_duration + min_duration) / 2.
                         rospy.logdebug(f'Current duration for search : {current_duration}')
-                        self.init_spline(current_duration)
-                        target_frames = self.precompute_trajectory_frames(start_pose, self.T_world_target, current_duration, dt)
+                        ee_trajectory = Trajectory(start_pose, self.T_world_target, current_duration)
+                        target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                         valid_accel = self.check_eff_accelerations(target_frames, dt)
                         
                         if valid_accel:
-                            previous = reached
                             q = self.robot.state.q.copy()
                             reached = self.solve_with_targets(next_trajectory, target_frames, dt, start, goal.timeout)
+                            
                             # Reset robot model state after exploration
                             self.robot.state.q = q
                             self.robot.update_kinematics()
@@ -203,24 +203,24 @@ class PlacoRos():
                                 next_trajectory = current_trajectory
                                 current_trajectory = tmp
                                 max_duration = current_duration
+                                current_valid = True
                             else:
                                 min_duration = current_duration
                             next_trajectory.points.clear()
                         else:
                             min_duration = current_duration
-                        i += 1
                     
-                    if previous:
+                    if current_valid:
                         success = URGoToResult.SUCCEEDED
-                        trajectory = current_trajectory
-                        # print(current_trajectory)
+                        joint_trajectory = current_trajectory
+                        print(current_trajectory)
                 except IKError:
                     return
                 except TimeoutError:
-                    trajectory = current_trajectory
+                    joint_trajectory = current_trajectory
             
         self.result.state = success
-        self.result.trajectory = trajectory
+        self.result.trajectory = joint_trajectory
         self.kinematics_server.set_succeeded(self.result)
             
 
@@ -240,7 +240,7 @@ class PlacoRos():
             if self.kinematics_server.is_preempt_requested():
                 self.handle_preempt()
                 return False
-            if not self.solver_tick(target_frame, update_model):
+            if not self.solve(target_frame, update_model):
                 raise IKError("Solver failed")
             
             q = self.get_robot_q(self.active_joints)
@@ -253,7 +253,7 @@ class PlacoRos():
         return self.target_reached()
 
 
-    def solver_tick(self, target_frame, update_model = True) -> bool:
+    def solve(self, target_frame, update_model = True) -> bool:
         try:
             self.effector_task.T_world_frame = target_frame
             t1 = time.monotonic()
@@ -275,7 +275,6 @@ class PlacoRos():
             return False
         
         V = np.diff(np.array(target_frames)[:, :3, 3], axis=0) / dt
-
         accel = np.diff(V, axis=0) / dt
         if len(accel) == 0:
             return False
@@ -283,20 +282,23 @@ class PlacoRos():
         
         accel_norms = abs(np.linalg.norm(accel, axis=1))
         max_accel = np.max(accel_norms)
-        # rospy.logdebug(f'Max eff acceleration : {max_accel}')
+        rospy.logdebug(f'Max eff acceleration : {max_accel}')
         
         return max_accel < self.max_eff_acceleration
 
 
     def check_dof_accelerations(self, trajectory: JointTrajectory, dt: float) -> bool:
         Q = [point.positions for point in trajectory.points]
-        V = np.diff(Q, axis=0) / dt
-        A = np.diff(V, axis=0) / dt
+        Qd = np.array([[placo.wrap_angle(qd) for qd in q] for q in np.diff(Q, axis=0)])
+        V = Qd / dt
+        Vd = np.diff(V, axis=0)
+        A = Vd / dt
         
         max_accel = np.amax(A)
-        # print(f'Velocities : {V}')
+        # print(f'Qd > PI or < PI : {np.any(Qd[:] > np.pi)}')
+        # print(f'Velocities : {np.max(Vd)}')
         # print(f'Accelerations : {A}')
-        # rospy.logdebug(f'Max dof accel : {max_accel} rad.s-2')
+        rospy.logdebug(f'Max dof accel : {max_accel} rad.s-2')
 
         return max_accel < self.max_dof_acceleration
     
@@ -313,21 +315,11 @@ class PlacoRos():
             self.robot.set_joint(joint_name, joint_position)
         self.robot.update_kinematics()
         
-        
-    def init_spline(self, goal_duration: float) -> None:
-        self.spline.clear()
-        self.spline.add_point(0.0, 0.0, 0.0)
-        self.spline.add_point(goal_duration, 1.0, 0.0)
-        
 
-    def precompute_trajectory_frames(self, start_pose, target_pose, goal_duration: float, dt: float) -> Iterable:
-        t = 0.
-        target_frames = []
-        while t < goal_duration:
-            t += dt
-            frame = placo.interpolate_frames(start_pose, target_pose, self.spline.pos(t))
-            target_frames.append(frame)
-            
+    def precompute_trajectory_frames(self, trajectory: Trajectory, dt: float) -> Iterable:
+        # print(f'linspace size : {trajectory.duration / dt}')
+        ts = np.linspace(0.0, trajectory.duration, round(trajectory.duration / dt))
+        target_frames = [trajectory(t) for t in ts]
         return target_frames
     
 
@@ -397,11 +389,14 @@ class PlacoRos():
         return SetActiveJointsResponse(SetActiveJointsResponse.SUCCEEDED, self.active_joints)
     
     
-    def reconfigure(self, config, _) -> None:
-        self.conservative_duration = config.conservative_max_duration # In seconds
-        self.max_search_iter = config.search_iterations # In m.s^-2
-        self.max_dof_acceleration = config.max_effector_acceleration # In rad.s^-2
-        self.max_search_iter = config.max_dof_acceleration # In iterations
+    def reconfigure(self, config, _) -> PlacoRosConfig:
+        with self.robot_lock:
+            self.conservative_duration = config.conservative_max_duration # In seconds
+            self.max_search_iter = config.search_iterations # In m.s^-2
+            self.max_eff_acceleration = config.max_effector_acceleration # In rad.s^-2
+            self.max_dof_acceleration = config.max_dof_acceleration # In iterations
+        
+        return config
     
     
     def mask_joints(self, request) -> MaskJointsResponse:
@@ -410,9 +405,3 @@ class PlacoRos():
     
     def unmask_joints(self, request) -> UnmaskJointsResponse:
         pass
- 
-
-if __name__=="__main__":
-    rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.DEBUG)
-    kinematics_server = PlacoRos()
-    rospy.spin()

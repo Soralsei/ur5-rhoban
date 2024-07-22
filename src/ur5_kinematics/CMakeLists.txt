@@ -70,13 +70,14 @@ add_service_files(
   SetActiveJoints.srv
   MaskJoints.srv
   UnmaskJoints.srv
+  CheckCollisions.srv
   )
   
 ## Generate actions in the 'action' folder
 add_action_files(DIRECTORY action FILES URGoTo.action)
       
 ## Generate added messages and services with any dependencies listed here
-generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs trajectory_msgs)
+generate_messages(DEPENDENCIES actionlib_msgs geometry_msgs trajectory_msgs sensor_msgs)
 
 
 ################################################

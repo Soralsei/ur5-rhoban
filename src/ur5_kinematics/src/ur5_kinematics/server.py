@@ -8,6 +8,7 @@ from ur5_kinematics.cfg import PlacoRosConfig
 import numpy as np
 from collections.abc import Iterable
 import placo
+import pinocchio as pin
 from placo_utils.visualization import robot_viz, frame_viz, robot_frame_viz
 from placo_utils.tf import tf as ptf
 
@@ -20,7 +21,8 @@ from ur5_kinematics.msg import URGoToAction, URGoToFeedback, URGoToResult, URGoT
 from ur5_kinematics.trajectory import Trajectory
 from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
     SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
-    UnmaskJointsResponse, MaskJointsResponse
+    UnmaskJointsResponse, MaskJointsResponse, \
+    CheckCollisions, CheckCollisionsResponse
 
 import actionlib
 import tf2_ros as tf2
@@ -138,6 +140,7 @@ class KinematicsServer():
         
         self.list_joints_srv = rospy.Service('~list_joints', ListJoints, self.list_joints)
         self.list_joints_srv = rospy.Service('~list_active_joints', ListJoints, self.list_active_joints)
+        self.check_collisions_srv = rospy.Service('~check_collisions', CheckCollisions, self.check_collisions)
         self.set_active_joints_srv = rospy.Service('~set_active_joints', SetActiveJoints, self.set_active_joints)
         self.mask_joints_srv = rospy.Service('~mask_joints', MaskJoints, self.mask_joints)
         self.unmask_joints_srv = rospy.Service('~unmask_joints', UnmaskJoints, self.unmask_joints)
@@ -426,3 +429,27 @@ class KinematicsServer():
     
     def unmask_joints(self, request) -> UnmaskJointsResponse:
         pass
+    
+    
+    def check_collisions(self, req) -> CheckCollisionsResponse:
+        response = CheckCollisionsResponse()
+        response.isColliding = False
+        joints = [(name, q, v, e) for name, q, v, e in zip(req.joints.name, req.joints.position, req.joints.velocity, req.joints.effort)]
+        if joints:
+            q = self.robot.state.q.copy()
+            self.set_robot_q(joints)
+            
+            response.isColliding = len(self.robot.self_collisions(True)) > 0
+            
+            self.robot.state.q = q
+            self.robot.update_kinematics()
+        else:
+            col = self.robot.self_collisions(False)
+            t = list(col)
+            print(f'{t}')
+            for collision in t:
+                print(f'Body A : {collision.bodyA}, body B : {collision.bodyB}')
+            # print(col.tolist())
+            response.isColliding = len(self.robot.self_collisions(True)) > 0
+        
+        return response

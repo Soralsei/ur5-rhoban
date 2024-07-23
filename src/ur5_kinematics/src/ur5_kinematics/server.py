@@ -102,7 +102,6 @@ class KinematicsServer():
         if pairs:
             self.robot.load_collision_pairs(pairs)
         
-        
         self.n_joints = len(self.robot.joint_names())
         rospy.loginfo(f'Joint names : {list(self.robot.joint_names())}')
         rospy.loginfo(f'number of joints : {len(self.robot.joint_names())}')
@@ -207,8 +206,9 @@ class KinematicsServer():
                         
                         if valid_accel:
                             q = self.robot.state.q.copy()
+                            rospy.logdebug('Solving...')
                             reached = self.solve_with_targets(next_trajectory, target_frames, dt, start, goal.timeout)
-                            
+                            rospy.logdebug(f'Reached : {reached}')
                             # Reset robot model state after exploration
                             self.robot.state.q = q
                             self.robot.update_kinematics()
@@ -231,6 +231,7 @@ class KinematicsServer():
                         joint_trajectory = current_trajectory
                         
                 except IKError:
+                    rospy.logerr(f'Failed to solve IK')
                     return
                 except TimeoutError:
                     joint_trajectory = current_trajectory
@@ -258,7 +259,6 @@ class KinematicsServer():
                 return False
             if not self.solve(target_frame, update_model):
                 raise IKError("Solver failed")
-            
             q = self.get_robot_q(self.active_joints)
             point = JointTrajectoryPoint()
             point.positions = q
@@ -358,11 +358,12 @@ class KinematicsServer():
 
 
     def target_reached(self):
-        # orient_err = self.effector_task.orientation().error_norm()
-        # pos_err = self.effector_task.position().error_norm()
-        current_pose = self.robot.get_T_world_frame(self.effector_frame)
-        orient_err = np.linalg.norm(self.T_world_target[:, :3] - current_pose[:, :3])
-        pos_err = np.linalg.norm(self.T_world_target[:, 3] - current_pose[:, 3])
+        orient_err = self.effector_task.orientation().error_norm()
+        pos_err = self.effector_task.position().error_norm()
+        rospy.logdebug(f'Orient error : {orient_err}, pos err : {pos_err}')
+        # current_pose = self.robot.get_T_world_frame(self.effector_frame)
+        # orient_err = np.linalg.norm(self.T_world_target[:, :3] - current_pose[:, :3])
+        # pos_err = np.linalg.norm(self.T_world_target[:, 3] - current_pose[:, 3])
         
         return orient_err < 1e-3 and pos_err < 1e-3
 
@@ -370,7 +371,9 @@ class KinematicsServer():
     def pose_to_matrix(self, pose: PoseStamped) -> np.ndarray:
         #Transform point into arm base frame
         try:
+            rospy.logdebug_once(f'To {self.base_frame}, from {pose.header.frame_id}')
             tf = self.tf2_buffer.lookup_transform(self.base_frame, pose.header.frame_id, pose.header.stamp)
+            rospy.logdebug_once(f'Transform {tf}')
         except Exception as e:
             tf = TransformStamped()
             rospy.logerr(f'Failed to transform from frame "{pose.header.frame_id}" to frame "{self.base_frame}" : {e.with_traceback(None)}')
@@ -382,7 +385,7 @@ class KinematicsServer():
         
         T = ptf.translation_matrix([pos.x, pos.y, pos.z])
         R = ptf.quaternion_matrix([rot.w, rot.x, rot.y, rot.z])
-        
+        rospy.logdebug(T)
         return T @ R
 
 
@@ -440,7 +443,7 @@ class KinematicsServer():
         
         return response
     
-    def _check_collision(self, joints: list | None = None):
+    def _check_collision(self, joints: list):
         colliding = False
         if joints:
             q = self.robot.state.q.copy()
@@ -452,8 +455,6 @@ class KinematicsServer():
             self.robot.update_kinematics()
         else:
             cols = self.robot.self_collisions(True)
-            for col in cols:
-                print(f'Body A : {col.bodyA} | {col.objA}, Body B : {col.bodyB} | {col.objB}')
             colliding = len(cols) > 0
         
         return colliding

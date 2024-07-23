@@ -5,6 +5,6 @@ from ur5_kinematics.server import KinematicsServer
 
 
 if __name__ == '__main__':
-    rospy.init_node("kinematics_server", sys.argv, log_level=rospy.DEBUG)
+    rospy.init_node("kinematics_server", sys.argv, log_level=rospy.INFO)
     server = KinematicsServer()
     rospy.spin()

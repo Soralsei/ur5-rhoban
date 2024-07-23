@@ -71,6 +71,7 @@ add_service_files(
   MaskJoints.srv
   UnmaskJoints.srv
   CheckCollision.srv
+  CheckTrajCollision.srv
   )
   
 ## Generate actions in the 'action' folder

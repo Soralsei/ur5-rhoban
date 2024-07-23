@@ -22,7 +22,8 @@ from ur5_kinematics.trajectory import Trajectory
 from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
     SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
     UnmaskJointsResponse, MaskJointsResponse, \
-    CheckCollisions, CheckCollisionsResponse
+    CheckCollision, CheckCollisionResponse, \
+    CheckTrajCollision, CheckTrajCollisionResponse
 
 import actionlib
 import tf2_ros as tf2
@@ -139,8 +140,9 @@ class KinematicsServer():
         self.state_sub = rospy.Subscriber(joint_states, JointState, self.joint_state_callback)
         
         self.list_joints_srv = rospy.Service('~list_joints', ListJoints, self.list_joints)
-        self.list_joints_srv = rospy.Service('~list_active_joints', ListJoints, self.list_active_joints)
-        self.check_collisions_srv = rospy.Service('~check_collisions', CheckCollisions, self.check_collisions)
+        self.list_active_joints_srv = rospy.Service('~list_active_joints', ListJoints, self.list_active_joints)
+        self.check_collisions_srv = rospy.Service('~check_collision', CheckCollision, self.check_collision)
+        self.check_traj_collisions_srv = rospy.Service('~check_traj_collision', CheckTrajCollision, self.check_traj_collision)
         self.set_active_joints_srv = rospy.Service('~set_active_joints', SetActiveJoints, self.set_active_joints)
         self.mask_joints_srv = rospy.Service('~mask_joints', MaskJoints, self.mask_joints)
         self.unmask_joints_srv = rospy.Service('~unmask_joints', UnmaskJoints, self.unmask_joints)
@@ -328,7 +330,7 @@ class KinematicsServer():
     
     
     def set_robot_q(self, joint_states: Iterable) -> None:
-        for joint_name, joint_position, _, _ in joint_states:
+        for joint_name, joint_position, *_ in joint_states:
             try:
                 self.robot.set_joint(joint_name, joint_position)
             except:
@@ -431,25 +433,35 @@ class KinematicsServer():
         pass
     
     
-    def check_collisions(self, req) -> CheckCollisionsResponse:
-        response = CheckCollisionsResponse()
-        response.isColliding = False
+    def check_collision(self, req) -> CheckCollisionResponse:
+        response = CheckCollisionResponse()
         joints = [(name, q, v, e) for name, q, v, e in zip(req.joints.name, req.joints.position, req.joints.velocity, req.joints.effort)]
+        response.isColliding = self._check_collision(joints)
+        
+        return response
+    
+    def _check_collision(self, joints: list | None = None):
+        colliding = False
         if joints:
             q = self.robot.state.q.copy()
             self.set_robot_q(joints)
             
-            response.isColliding = len(self.robot.self_collisions(True)) > 0
+            colliding = len(self.robot.self_collisions(True)) > 0
             
             self.robot.state.q = q
             self.robot.update_kinematics()
         else:
-            col = self.robot.self_collisions(False)
-            t = list(col)
-            print(f'{t}')
-            for collision in t:
-                print(f'Body A : {collision.bodyA}, body B : {collision.bodyB}')
-            # print(col.tolist())
-            response.isColliding = len(self.robot.self_collisions(True)) > 0
+            
+            colliding = len(self.robot.self_collisions(True)) > 0
         
+        return colliding
+    
+    def check_traj_collision(self, req) -> CheckTrajCollisionResponse:
+        response = CheckTrajCollisionResponse()
+        res = True
+        for point in req.trajectory.points:
+            joints = [(name, q, *_) for name, q, *_ in zip(req.trajectory.joint_names, point.positions, point.velocities, point.accelerations)]
+            res &= self._check_collision(joints)
+        response.isColliding = res
         return response
+        

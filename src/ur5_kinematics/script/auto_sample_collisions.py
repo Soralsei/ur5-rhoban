@@ -70,16 +70,21 @@ class ConfigurationSampler():
         parents = self.robot.model.parents.tolist()[1:]
         subtrees = [subtree.tolist() for subtree in self.robot.model.subtrees.tolist()]
         children = []
+        ## Recreate model tree from subtrees
+        
+        # Get unique subtrees in robot model
         for subtree in subtrees:
             if subtree not in children:
                 children.append(subtree)
-                
+
+        # Remove redundant children in subtrees
         for i in range(len(children) - 1):
             a = set(children[i])
             for j in range(i + 1, len(children)):
                 a = a - set(children[j])
             children[i] = list(a)
         
+        # Regroup children with same parent in same list
         for i in range(0, len(parents) - 1):
             if parents[i] == parents[i + 1]:
                 children[parents[i]].extend(children.pop(parents[i] + 1))
@@ -90,6 +95,7 @@ class ConfigurationSampler():
         buffer.append(parents[0])
         visited = [False] * reduce(lambda count, l: count + len(l), children, 0)
         
+        # Depth first link tree traversal
         while buffer:
             node = buffer.pop()
             if node < len(children) and not visited[node]:

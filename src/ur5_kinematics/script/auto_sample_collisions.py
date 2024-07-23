@@ -38,7 +38,7 @@ class MissingParameterError(ValueError):
     pass
 
 class ConfigurationSampler():
-    def __init__(self):
+    def __init__(self, prefix: str):
         urdf = rospy.get_param('/robot_description')
         if not urdf:
             rospy.signal_shutdown()
@@ -49,17 +49,21 @@ class ConfigurationSampler():
         
         self.robot = placo.RobotWrapper('', 0, urdf)
         self.n_joints = len(self.robot.joint_names())
+        self.prefix: str = prefix
+        
+        self.joint_names = [self.prefix + name for name in UNMASKED_JOINT_NAMES]
         
         rospy.loginfo(f'Joint names : {list(self.robot.joint_names())}')
         rospy.loginfo(f'number of joints : {len(self.robot.joint_names())}')
     
     def random_configuration(self) -> None:
         for name in self.robot.joint_names():
-            if name not in UNMASKED_JOINT_NAMES:
+            if name not in self.joint_names:
                 continue
             r = np.random.rand()
+            # Number in [-1, 1] interval
             r = r -(1 - r)
-            self.robot.set_joint(name, r * 2 * np.pi)
+            self.robot.set_joint(name, r * np.pi)
         self.robot.update_kinematics()
     
     def get_collision_pairs(self):
@@ -97,22 +101,24 @@ class ConfigurationSampler():
                 for child in children[node]:
                     consecutive.append((node, child))
                     buffer.append(child)
-        
+        print(f'Consecutive pairs in model : {consecutive}')
+    
         # pairs = [(pair.first, pair.second) for pair in self.robot.collision_model.collisionPairs if (pair.first, pair.second) not in consecutive]
-        for pair in consecutive:
-            p = pinocchio.CollisionPair(pair[0], pair[1])
-            self.robot.collision_model.removeCollisionPair(p)
+        # for pair in consecutive:
+        #     print(pair)
+        #     p = pinocchio.CollisionPair(pair[0], pair[1])
+        #     self.robot.collision_model.removeCollisionPair(p)
         
         pairs = []
-        for _ in range(20_000):
+        for _ in range(10_000):
             self.random_configuration()
-            collisions: list[placo.Collision] = list(self.robot.self_collisions(True))
+            collisions: list[placo.Collision] = list(self.robot.self_collisions(False))
             collisions = [(collision.objA, collision.objB) for collision in collisions]
             pairs.extend(collisions)
-            
-        pairs = set([collision for collision in pairs if collision not in consecutive])
         
-        return pairs
+        actual = [collision for collision in pairs if collision not in consecutive]
+        
+        return set(actual)
 
 
 if __name__=="__main__":
@@ -120,10 +126,11 @@ if __name__=="__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--output' , type=str, required=True)
+    parser.add_argument('-p', '--prefix' , type=str, default='')
     args = parser.parse_args()
     
     rospy.init_node(name="kinematics_server", argv=sys.argv, log_level=rospy.INFO)
-    sampler = ConfigurationSampler()
+    sampler = ConfigurationSampler(args.prefix)
     print(f'Default collision pairs count : {len(sampler.get_collision_pairs())}')
     pairs = sampler.sample_collision_pairs()
     print(f'Sampled collision pairs count : {len(pairs)}')

@@ -185,9 +185,11 @@ class KinematicsServer():
                 ee_trajectory = Trajectory(start_pose, self.T_world_target, goal_duration)
                 target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                 try:
-                    if self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout):
+                    reached = self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout)
+                    if reached:
                         success = URGoToResult.SUCCEEDED
                 except IKError:
+                    rospy.logerr(f'Failed to solve IK')
                     return
             else:
                 current_trajectory = JointTrajectory(joint_trajectory.header, self.active_joints, [])
@@ -199,16 +201,13 @@ class KinematicsServer():
                     max_duration = self.conservative_duration
                     for _ in range(self.max_search_iter):
                         current_duration = (max_duration + min_duration) / 2.
-                        rospy.logdebug(f'Current duration for search : {current_duration}')
                         ee_trajectory = Trajectory(start_pose, self.T_world_target, current_duration)
                         target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                         valid_accel = self.check_eff_accelerations(target_frames, dt)
                         
                         if valid_accel:
                             q = self.robot.state.q.copy()
-                            rospy.logdebug('Solving...')
                             reached = self.solve_with_targets(next_trajectory, target_frames, dt, start, goal.timeout)
-                            rospy.logdebug(f'Reached : {reached}')
                             # Reset robot model state after exploration
                             self.robot.state.q = q
                             self.robot.update_kinematics()
@@ -235,7 +234,7 @@ class KinematicsServer():
                     return
                 except TimeoutError:
                     joint_trajectory = current_trajectory
-            
+        rospy.logdebug(f'Success ? {success == URGoToResult.SUCCEEDED}, {success}')
         self.result.state = success
         self.result.trajectory = joint_trajectory
         self.kinematics_server.set_succeeded(self.result)
@@ -243,8 +242,7 @@ class KinematicsServer():
 
     def joint_state_callback(self, state: JointState) -> None:
         with self.state_received_cond:
-            ## Reorder the received JointState message to match placo joint order
-            self.joint_state = zip(state.name, state.position, state.velocity, state.effort)
+            self.joint_state = zip(state.name, state.position)
             self.state_received_cond.notify()
 
 
@@ -278,7 +276,6 @@ class KinematicsServer():
             # rospy.logdebug(f'Solve iteration time : {t2 - t1}')
             self.robot.update_kinematics()
         except RuntimeError as e:
-            rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
             rospy.logerr(f'Start transform : {self.robot.get_T_world_frame(self.effector_frame)}')
             rospy.logerr(f'Target transform : {target_frame}')
             self.solver.dump_status()
@@ -297,11 +294,9 @@ class KinematicsServer():
         accel = np.diff(V, axis=0) / dt
         if len(accel) == 0:
             return False
-        # print(f'a = {accel}')
         
         accel_norms = abs(np.linalg.norm(accel, axis=1))
         max_accel = np.max(accel_norms)
-        rospy.logdebug(f'Max eff acceleration : {max_accel}')
         
         return max_accel < self.max_eff_acceleration
 
@@ -314,10 +309,7 @@ class KinematicsServer():
         A = Vd / dt
         
         max_accel = np.amax(A)
-        # print(f'Qd > PI or < PI : {np.any(Qd[:] > np.pi)}')
-        # print(f'Velocities : {np.max(Vd)}')
-        # print(f'Accelerations : {A}')
-        rospy.logdebug(f'Max dof accel : {max_accel} rad.s-2')
+        rospy.logdebug(f'Max dof accel : {max_accel}')
 
         return max_accel < self.max_dof_acceleration
     
@@ -330,7 +322,7 @@ class KinematicsServer():
     
     
     def set_robot_q(self, joint_states: Iterable) -> None:
-        for joint_name, joint_position, *_ in joint_states:
+        for joint_name, joint_position in joint_states:
             try:
                 self.robot.set_joint(joint_name, joint_position)
             except:
@@ -385,7 +377,6 @@ class KinematicsServer():
         
         T = ptf.translation_matrix([pos.x, pos.y, pos.z])
         R = ptf.quaternion_matrix([rot.w, rot.x, rot.y, rot.z])
-        rospy.logdebug(T)
         return T @ R
 
 
@@ -463,7 +454,7 @@ class KinematicsServer():
         response = CheckTrajCollisionResponse()
         res = True
         for point in req.trajectory.points:
-            joints = [(name, q, *_) for name, q, *_ in zip(req.trajectory.joint_names, point.positions, point.velocities, point.accelerations)]
+            joints = [(name, q) for name, q in zip(req.trajectory.joint_names, point.positions)]
             res &= self._check_collision(joints)
         response.isColliding = res
         return response

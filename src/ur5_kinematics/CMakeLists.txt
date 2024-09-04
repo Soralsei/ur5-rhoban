@@ -170,8 +170,7 @@ include_directories(
 install(PROGRAMS
   test/*
   node/*
-  script/auto_sample_collisions.py
-  script/home_ur
+  script/*
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

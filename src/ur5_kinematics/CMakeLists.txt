@@ -10,6 +10,7 @@ project(ur5_kinematics)
 find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   control_msgs
+  controller_manager_msgs
   trajectory_msgs
   geometry_msgs
   sensor_msgs
@@ -170,6 +171,7 @@ install(PROGRAMS
   test/*
   node/*
   script/auto_sample_collisions.py
+  script/home_ur
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

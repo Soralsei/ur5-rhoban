@@ -1,0 +1,34 @@
+#! /usr/env python
+
+import rospy
+import numpy as np
+
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from controller_manager_msgs.utils import ControllerLister
+
+HOME = {
+    'elbow_joint' : np.pi / 2,
+    'shoulder_lift_joint' : -np.pi / 2,
+    'shoulder_pan' : np.pi,
+    'wrist_1_joint' : -np.pi / 2,
+    'wrist_2_joint' : -np.pi / 2,
+    'wrist_3_joint' : 0.0
+}
+
+if __name__ == '__main__':
+    import sys
+    rospy.init_node('home_ur', sys.argv)
+    topic = rospy.get_param('topic', '/pos_joint_traj_controller/follow_joint_trajectory/')
+    prefix = rospy.get_param('prefix', '')
+    client = rospy.Publisher(topic, JointTrajectory, queue_size=1)
+    
+    traj = JointTrajectory()
+    traj.joint_names = [prefix + key for key in HOME.keys()]
+    traj.header.stamp = rospy.Time.now()
+    point = JointTrajectoryPoint()
+    for name in traj.joint_names:
+        point.positions.append(HOME.get(name, 0.0))
+    traj.points.append(point)
+    
+    client.publish(traj)
+    

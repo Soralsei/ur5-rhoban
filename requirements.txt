@@ -1,4 +1,6 @@
-numpy
-matplotlib
-scipy
+jupyterlab
+mayavi
+configobj
+PySide2
+pyyaml
 meshcat

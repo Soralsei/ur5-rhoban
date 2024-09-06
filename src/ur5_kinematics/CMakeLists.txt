@@ -10,6 +10,7 @@ project(ur5_kinematics)
 find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   control_msgs
+  controller_manager_msgs
   trajectory_msgs
   geometry_msgs
   sensor_msgs
@@ -70,7 +71,8 @@ add_service_files(
   SetActiveJoints.srv
   MaskJoints.srv
   UnmaskJoints.srv
-  CheckCollisions.srv
+  CheckCollision.srv
+  CheckTrajCollision.srv
   )
   
 ## Generate actions in the 'action' folder
@@ -168,7 +170,7 @@ include_directories(
 install(PROGRAMS
   test/*
   node/*
-  script/auto_sample_collisions.py
+  script/*
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

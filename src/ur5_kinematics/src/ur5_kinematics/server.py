@@ -101,7 +101,6 @@ class KinematicsServer():
         if pairs:
             self.robot.load_collision_pairs(pairs)
         
-        
         self.n_joints = len(self.robot.joint_names())
         rospy.loginfo(f'Joint names : {list(self.robot.joint_names())}')
         rospy.loginfo(f'number of joints : {len(self.robot.joint_names())}')
@@ -184,9 +183,11 @@ class KinematicsServer():
                 ee_trajectory = Trajectory(start_pose, self.T_world_target, goal_duration)
                 target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                 try:
-                    if self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout):
+                    reached = self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout)
+                    if reached:
                         success = URGoToResult.SUCCEEDED
                 except IKError:
+                    rospy.logerr(f'Failed to solve IK')
                     return
             else:
                 current_trajectory = JointTrajectory(joint_trajectory.header, self.active_joints, [])
@@ -198,7 +199,6 @@ class KinematicsServer():
                     max_duration = self.conservative_duration
                     for _ in range(self.max_search_iter):
                         current_duration = (max_duration + min_duration) / 2.
-                        rospy.logdebug(f'Current duration for search : {current_duration}')
                         ee_trajectory = Trajectory(start_pose, self.T_world_target, current_duration)
                         target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                         valid_accel = self.check_eff_accelerations(target_frames, dt)
@@ -206,7 +206,6 @@ class KinematicsServer():
                         if valid_accel:
                             q = self.robot.state.q.copy()
                             reached = self.solve_with_targets(next_trajectory, target_frames, dt, start, goal.timeout)
-                            
                             # Reset robot model state after exploration
                             self.robot.state.q = q
                             self.robot.update_kinematics()
@@ -229,10 +228,11 @@ class KinematicsServer():
                         joint_trajectory = current_trajectory
                         
                 except IKError:
+                    rospy.logerr(f'Failed to solve IK')
                     return
                 except TimeoutError:
                     joint_trajectory = current_trajectory
-            
+        rospy.logdebug(f'Success ? {success == URGoToResult.SUCCEEDED}, {success}')
         self.result.state = success
         self.result.trajectory = joint_trajectory
         self.kinematics_server.set_succeeded(self.result)
@@ -240,7 +240,7 @@ class KinematicsServer():
 
     def joint_state_callback(self, state: JointState) -> None:
         with self.state_received_cond:
-            self.joint_state = zip(state.name, state.position, state.velocity, state.effort)
+            self.joint_state = zip(state.name, state.position)
             self.state_received_cond.notify()
 
 
@@ -255,7 +255,6 @@ class KinematicsServer():
                 return False
             if not self.solve(target_frame, update_model):
                 raise IKError("Solver failed")
-            
             q = self.get_robot_q(self.active_joints)
             point = JointTrajectoryPoint()
             point.positions = q
@@ -275,7 +274,6 @@ class KinematicsServer():
             # rospy.logdebug(f'Solve iteration time : {t2 - t1}')
             self.robot.update_kinematics()
         except RuntimeError as e:
-            rospy.logerr(f'IK solve failed : {e.with_traceback(None)}')
             rospy.logerr(f'Start transform : {self.robot.get_T_world_frame(self.effector_frame)}')
             rospy.logerr(f'Target transform : {target_frame}')
             self.solver.dump_status()
@@ -294,11 +292,9 @@ class KinematicsServer():
         accel = np.diff(V, axis=0) / dt
         if len(accel) == 0:
             return False
-        # print(f'a = {accel}')
         
         accel_norms = abs(np.linalg.norm(accel, axis=1))
         max_accel = np.max(accel_norms)
-        rospy.logdebug(f'Max eff acceleration : {max_accel}')
         
         return max_accel < self.max_eff_acceleration
 
@@ -311,10 +307,7 @@ class KinematicsServer():
         A = Vd / dt
         
         max_accel = np.amax(A)
-        # print(f'Qd > PI or < PI : {np.any(Qd[:] > np.pi)}')
-        # print(f'Velocities : {np.max(Vd)}')
-        # print(f'Accelerations : {A}')
-        rospy.logdebug(f'Max dof accel : {max_accel} rad.s-2')
+        rospy.logdebug(f'Max dof accel : {max_accel}')
 
         return max_accel < self.max_dof_acceleration
     
@@ -327,7 +320,7 @@ class KinematicsServer():
     
     
     def set_robot_q(self, joint_states: Iterable) -> None:
-        for joint_name, joint_position, _, _ in joint_states:
+        for joint_name, joint_position in joint_states:
             try:
                 self.robot.set_joint(joint_name, joint_position)
             except:
@@ -355,11 +348,12 @@ class KinematicsServer():
 
 
     def target_reached(self):
-        # orient_err = self.effector_task.orientation().error_norm()
-        # pos_err = self.effector_task.position().error_norm()
-        current_pose = self.robot.get_T_world_frame(self.effector_frame)
-        orient_err = np.linalg.norm(self.T_world_target[:, :3] - current_pose[:, :3])
-        pos_err = np.linalg.norm(self.T_world_target[:, 3] - current_pose[:, 3])
+        orient_err = self.effector_task.orientation().error_norm()
+        pos_err = self.effector_task.position().error_norm()
+        rospy.logdebug(f'Orient error : {orient_err}, pos err : {pos_err}')
+        # current_pose = self.robot.get_T_world_frame(self.effector_frame)
+        # orient_err = np.linalg.norm(self.T_world_target[:, :3] - current_pose[:, :3])
+        # pos_err = np.linalg.norm(self.T_world_target[:, 3] - current_pose[:, 3])
         
         return orient_err < 1e-3 and pos_err < 1e-3
 
@@ -367,7 +361,9 @@ class KinematicsServer():
     def pose_to_matrix(self, pose: PoseStamped) -> np.ndarray:
         #Transform point into arm base frame
         try:
+            rospy.logdebug_once(f'To {self.base_frame}, from {pose.header.frame_id}')
             tf = self.tf2_buffer.lookup_transform(self.base_frame, pose.header.frame_id, pose.header.stamp)
+            rospy.logdebug_once(f'Transform {tf}')
         except Exception as e:
             tf = TransformStamped()
             rospy.logerr(f'Failed to transform from frame "{pose.header.frame_id}" to frame "{self.base_frame}" : {e.with_traceback(None)}')
@@ -379,7 +375,6 @@ class KinematicsServer():
         
         T = ptf.translation_matrix([pos.x, pos.y, pos.z])
         R = ptf.quaternion_matrix([rot.w, rot.x, rot.y, rot.z])
-        
         return T @ R
 
 
@@ -434,6 +429,12 @@ class KinematicsServer():
         response = CheckCollisionsResponse()
         response.isColliding = False
         joints = [(name, q, v, e) for name, q, v, e in zip(req.joints.name, req.joints.position, req.joints.velocity, req.joints.effort)]
+        response.isColliding = self._check_collision(joints)
+        
+        return response
+    
+    def _check_collision(self, joints: list):
+        colliding = False
         if joints:
             q = self.robot.state.q.copy()
             self.set_robot_q(joints)
@@ -443,13 +444,16 @@ class KinematicsServer():
             self.robot.state.q = q
             self.robot.update_kinematics()
         else:
-            col = self.robot.self_collisions(False)
-            t = list(col)
-            print(f'{t}')
-            for collision in t:
-                
-                print(f'Body A : {collision.bodyA}, body B : {collision.bodyB}')
-            # print(col.tolist())
-            response.isColliding = len(self.robot.self_collisions(True)) > 0
+            cols = self.robot.self_collisions(True)
+            colliding = len(cols) > 0
         
+        return colliding
+    
+    def check_traj_collision(self, req) -> CheckTrajCollisionResponse:
+        response = CheckTrajCollisionResponse()
+        res = True
+        for point in req.trajectory.points:
+            joints = [(name, q) for name, q in zip(req.trajectory.joint_names, point.positions)]
+            res &= self._check_collision(joints)
+        response.isColliding = res
         return response

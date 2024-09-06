@@ -15,7 +15,7 @@ if __name__ == '__main__':
         [-0.5, 0.15, 0.35],
         [-0.5, -0.15, 0.35]
     ]
-    test = PathTest('/pos_joint_traj_controller/follow_joint_trajectory', '/goal_pose', points)
+    test = PathTest('/pos_joint_traj_controller/follow_joint_trajectory', '/kinematics_server/goal_pose', points)
     
     while True:
         test.update()

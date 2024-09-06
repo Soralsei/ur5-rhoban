@@ -12,7 +12,6 @@ class PathTest(BaseTest):
     def __init__(self, controller_topic: str, kinematics_topic:str, path: Iterable, prefix:str = '', loop: bool = True, segment_duration: float = 0.0):
         super(PathTest, self).__init__(controller_topic, kinematics_topic, prefix)
         self.path = path
-        self.seq = 0
         self.segment_duration = segment_duration
         if loop:
             self.path = cycle(path)
@@ -38,4 +37,3 @@ class PathTest(BaseTest):
                 rospy.loginfo(f'Trajectory execution success')
         else:
             raise RuntimeError('Solver failed')
-        self.seq += 1

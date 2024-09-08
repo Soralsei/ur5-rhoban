@@ -26,10 +26,11 @@ class BaseTest():
         rospy.loginfo(f'Connected to controller action server')
         self.kinematics_client.wait_for_server()
         rospy.loginfo(f'Connected to kinematics action server')
+        self.seq = 0
         
     
-    def init_goal(self, target) -> URGoToGoal:
-        T_world_target = ptf.translation_matrix(target) @ ptf.euler_matrix(np.pi, 0, 0)
+    def init_goal(self, target, rot = [np.pi, 0, 0]) -> URGoToGoal:
+        T_world_target = ptf.translation_matrix(target) @ ptf.euler_matrix(rot[0], rot[1], rot[2])
             
         goal = URGoToGoal()
         goal.target_pose = BaseTest.matrix_to_pose(T_world_target, self.base_frame)
@@ -37,6 +38,7 @@ class BaseTest():
         # goal.duration = rospy.Duration(2.0)
         goal.duration = rospy.Duration(self.segment_duration)
         goal.target_pose.header.seq = self.seq
+        self.seq += 1
     
         return goal
     

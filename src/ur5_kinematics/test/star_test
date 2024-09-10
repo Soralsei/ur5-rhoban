@@ -1,0 +1,28 @@
+#!/usr/bin/env python
+import sys
+import rospy
+from math import cos, sin, pi
+from ur5_kinematics.testing import PathTest
+import argparse
+
+if __name__ == '__main__':    
+    rospy.init_node("kinematics_test", sys.argv)
+    path = []
+    outer_radius = 0.3
+    inner_radius = 0.1
+    for k in range(5):
+        path.append([-0.3, outer_radius * cos((2 * pi * k) / 5 + pi / 2), outer_radius * sin((2 * pi * k) / 5 + pi / 2) + 0.5])
+        path.append([-0.3, inner_radius * cos((2 * pi * k) / 5 + (pi / 2) + (2 * pi / 10)), inner_radius * sin((2 * pi * k) / 5 + (pi / 2)  + (2 * pi / 10)) + 0.5])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--type', '-t', default='real', choices=['real', 'simulated'])
+    parser.add_argument('--prefix', '-p', default='')
+    args = parser.parse_args()
+    controller = '/scaled_pos_joint_traj_controller/follow_joint_trajectory'
+    
+    if args.type == 'simulated':
+        print("Simulated environment...")
+        controller = '/pos_joint_traj_controller/follow_joint_trajectory'
+    test = PathTest(controller, '/kinematics_server/goal_pose', path, prefix=args.prefix, segment_duration=0.0)
+    
+    while True:
+        test.update()

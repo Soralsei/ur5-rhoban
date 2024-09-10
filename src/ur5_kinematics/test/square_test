@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-
-from math import sin
 import rospy
 
 from ur5_kinematics.testing import PathTest
 import sys
-
+import argparse
 
 if __name__ == '__main__':    
     rospy.init_node("kinematics_test", sys.argv)
@@ -15,7 +13,18 @@ if __name__ == '__main__':
         [-0.5, 0.15, 0.35],
         [-0.5, -0.15, 0.35]
     ]
-    test = PathTest('/pos_joint_traj_controller/follow_joint_trajectory', '/kinematics_server/goal_pose', points)
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--type', '-t', default='real', choices=['real', 'simulated'])
+    parser.add_argument('--prefix', '-p', default='')
+    args = parser.parse_args()
+    controller = '/scaled_pos_joint_traj_controller/follow_joint_trajectory'
+    
+    if args.type == 'simulated':
+        print("Simulated environment...")
+        controller = '/pos_joint_traj_controller/follow_joint_trajectory'
+        
+    test = PathTest(controller, '/kinematics_server/goal_pose', points, prefix=args.prefix, segment_duration=0.0)
     
     while True:
         test.update()

@@ -18,11 +18,12 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Header
 
 from ur5_kinematics.msg import URGoToAction, URGoToFeedback, URGoToResult, URGoToGoal
+from ur5_kinematics.srv._CheckTrajCollision import CheckTrajCollisionResponse
 from ur5_kinematics.trajectory import Trajectory
 from ur5_kinematics.srv import ListJoints, ListJointsResponse, SetActiveJoints,\
     SetActiveJointsResponse, UnmaskJoints, MaskJoints, \
     UnmaskJointsResponse, MaskJointsResponse, \
-    CheckCollisions, CheckCollisionsResponse
+    CheckCollision, CheckCollisionResponse
 
 import actionlib
 import tf2_ros as tf2
@@ -89,7 +90,7 @@ class KinematicsServer():
         
         joint_states = rospy.get_param('~joint_state_topic', '/joint_states')
         
-        self.frequency = rospy.get_param('~dt', 100.)
+        self.frequency = rospy.get_param('~frequency', 100.)
         self.conservative_duration = rospy.get_param('~conservative_duration', 20.0) # In seconds
         self.max_eff_acceleration = rospy.get_param('~max_eff_acceleration', 1.0) # In m.s^-2
         self.max_dof_acceleration = rospy.get_param('~max_dof_acceleration', np.pi * 2) # In rad.s^-2
@@ -139,7 +140,7 @@ class KinematicsServer():
         
         self.list_joints_srv = rospy.Service('~list_joints', ListJoints, self.list_joints)
         self.list_joints_srv = rospy.Service('~list_active_joints', ListJoints, self.list_active_joints)
-        self.check_collisions_srv = rospy.Service('~check_collisions', CheckCollisions, self.check_collisions)
+        self.check_collisions_srv = rospy.Service('~check_collisions', CheckCollision, self.check_collisions)
         self.set_active_joints_srv = rospy.Service('~set_active_joints', SetActiveJoints, self.set_active_joints)
         self.mask_joints_srv = rospy.Service('~mask_joints', MaskJoints, self.mask_joints)
         self.unmask_joints_srv = rospy.Service('~unmask_joints', UnmaskJoints, self.unmask_joints)
@@ -183,7 +184,9 @@ class KinematicsServer():
                 ee_trajectory = Trajectory(start_pose, self.T_world_target, goal_duration)
                 target_frames = self.precompute_trajectory_frames(ee_trajectory, dt)
                 try:
+                    t0 = time.monotonic()
                     reached = self.solve_with_targets(joint_trajectory, target_frames, dt, start, goal.timeout)
+                    rospy.logdebug(f'Solved with dt = {dt}s in {time.monotonic() - t0:.4f}s')
                     if reached:
                         success = URGoToResult.SUCCEEDED
                 except IKError:
@@ -425,8 +428,8 @@ class KinematicsServer():
         pass
     
     
-    def check_collisions(self, req) -> CheckCollisionsResponse:
-        response = CheckCollisionsResponse()
+    def check_collisions(self, req) -> CheckCollisionResponse:
+        response = CheckCollisionResponse()
         response.isColliding = False
         joints = [(name, q, v, e) for name, q, v, e in zip(req.joints.name, req.joints.position, req.joints.velocity, req.joints.effort)]
         response.isColliding = self._check_collision(joints)
@@ -439,7 +442,7 @@ class KinematicsServer():
             q = self.robot.state.q.copy()
             self.set_robot_q(joints)
             
-            response.isColliding = len(self.robot.self_collisions(True)) > 0
+            colliding = len(self.robot.self_collisions(True)) > 0
             
             self.robot.state.q = q
             self.robot.update_kinematics()

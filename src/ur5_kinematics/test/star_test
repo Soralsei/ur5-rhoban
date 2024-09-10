@@ -22,7 +22,7 @@ if __name__ == '__main__':
     if args.type == 'simulated':
         print("Simulated environment...")
         controller = '/pos_joint_traj_controller/follow_joint_trajectory'
-    test = PathTest(controller, '/kinematics_server/goal_pose', path, prefix=args.prefix, segment_duration=0.0)
+    test = PathTest(controller, '/kinematics_server/goal_pose', path, prefix=args.prefix, segment_duration=1.0)
     
     while True:
         test.update()

@@ -8,7 +8,6 @@ from ur5_kinematics.cfg import PlacoRosConfig
 import numpy as np
 from collections.abc import Iterable
 import placo
-import pinocchio as pin
 from placo_utils.visualization import robot_viz, frame_viz, robot_frame_viz
 from placo_utils.tf import tf as ptf
 

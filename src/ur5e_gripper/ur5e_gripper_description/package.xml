@@ -51,6 +51,7 @@
   <!--   <doc_depend>doxygen</doc_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
   <exec_depend>xacro</exec_depend>
+  <exec_depend>gripper_action_controller</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

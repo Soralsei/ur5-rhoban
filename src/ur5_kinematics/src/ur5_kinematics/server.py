@@ -363,9 +363,9 @@ class KinematicsServer():
     def pose_to_matrix(self, pose: PoseStamped) -> np.ndarray:
         #Transform point into arm base frame
         try:
-            rospy.logdebug_once(f'To {self.base_frame}, from {pose.header.frame_id}')
+            rospy.logdebug(f'To {self.base_frame}, from {pose.header.frame_id}')
             tf = self.tf2_buffer.lookup_transform(self.base_frame, pose.header.frame_id, pose.header.stamp)
-            rospy.logdebug_once(f'Transform {tf}')
+            rospy.logdebug(f'Transform {tf}')
         except Exception as e:
             tf = TransformStamped()
             rospy.logerr(f'Failed to transform from frame "{pose.header.frame_id}" to frame "{self.base_frame}" : {e.with_traceback(None)}')

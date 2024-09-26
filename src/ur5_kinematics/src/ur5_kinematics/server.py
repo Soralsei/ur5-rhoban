@@ -364,7 +364,7 @@ class KinematicsServer():
         #Transform point into arm base frame
         try:
             rospy.logdebug(f'To {self.base_frame}, from {pose.header.frame_id}')
-            tf = self.tf2_buffer.lookup_transform(self.base_frame, pose.header.frame_id, rospy.Time.now())
+            tf = self.tf2_buffer.lookup_transform(self.base_frame, pose.header.frame_id, rospy.Time(0))
             rospy.logdebug(f'Transform {tf}')
         except Exception as e:
             tf = TransformStamped()
